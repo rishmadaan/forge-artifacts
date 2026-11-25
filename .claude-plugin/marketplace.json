@@ -1,0 +1,17 @@
+{
+  "name": "forge-artifacts",
+  "owner": { "name": "Forge contributors" },
+  "description": "Forge: a private-by-default page publisher any AI agent can use",
+  "plugins": [
+    {
+      "name": "forge-artifacts",
+      "displayName": "Forge",
+      "source": "./skills/publish",
+      "description": "Private-by-default page publisher any AI agent can use",
+      "author": { "name": "Forge contributors" },
+      "homepage": "https://github.com/rishmadaan/forge-artifacts",
+      "repository": "https://github.com/rishmadaan/forge-artifacts",
+      "license": "MIT"
+    }
+  ]
+}
