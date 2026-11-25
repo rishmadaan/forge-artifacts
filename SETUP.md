@@ -233,14 +233,18 @@ one (`docs/reference.md`, "Is the link site current?").
    that one, not Forge's. For a folder marked `skipped:`, and for agents that
    read neither folder, point them at Forge's skill file by its full path,
    `<this repository>/skills/publish/SKILL.md` (`--check` prints it).
-   `not linked, by choice:` means `bin/install --no-skill` was run: the agent
-   gets the skill from its plugin store, so there is nothing to link.
+   `not linked, by choice:` means only that skill linking was turned off
+   (`bin/install --no-skill`). It does not check that a plugin store
+   installed the skill: for each agent, confirm Forge's skill is enabled
+   where that agent will use it.
 2. Paste this paragraph into the instructions file each agent reads (for
    example `AGENTS.md`, `CLAUDE.md`, or the agent's global instructions),
    with `<command>` replaced by the name from step 2 (`forge` or `forgee`),
-   and `<skill>` by `the publish skill` when both skill lines say `linked:`
-   or `not linked, by choice:`, or by the full path of Forge's `SKILL.md` when
-   either says `skipped:`:
+   and `<skill>` by `the publish skill` when both skill lines say `linked:`;
+   when they say `not linked, by choice:`, by that agent's confirmed name for
+   Forge's skill (a Claude Code plugin shows it as `forge-artifacts:publish`);
+   otherwise, or when either says `skipped:`, by the full path of Forge's
+   `SKILL.md`:
 
 > To publish any page meant to be read (a report, plan, explainer, deck,
 > mockup), use Forge, never a vendor's own artifact or publish feature: run
@@ -261,9 +265,12 @@ This step is for later: the setup is finished at step 6. Tell the person how
 to update. When a new release is out (GitHub can say so: on the repository
 page, Watch, then Custom, then Releases), run `forge update --check` to see
 what it brings, then `forge update`. It fast-forwards this repository to the
-release and prints what changed; the command and the skill are links into
-this folder, so they update with it. It refuses, changing nothing, when this
-copy is not a git checkout, has uncommitted changes or commits of its own,
+release and prints what changed. It updates the command in this clone, and
+skill links made by `bin/install` update with it. A skill installed through a
+plugin store updates separately, through that store:
+`claude plugin update forge-artifacts@forge-artifacts`,
+`gemini extensions update forge-artifacts`, or `npx skills update`. It
+refuses, changing nothing, when this copy is not a git checkout, has uncommitted changes or commits of its own,
 or while another forge command holds the store lock; run it when no other
 forge command is running. The
 store is not touched. `CHANGELOG.md` lists every release.

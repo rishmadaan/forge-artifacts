@@ -86,3 +86,6 @@ Tests make scratch stores and a scratch home folder under the OS temp folder.
 3. The tag starts `.github/workflows/release.yml`: it tests again, checks the
    tag against `VERSION`, and makes the GitHub Release from the CHANGELOG
    section (`scripts/changelog-section.sh`).
+
+A change to `skills/publish/SKILL.md` that needs unreleased command behaviour
+lands with the release, since Claude Code's plugin copy follows `main`.
