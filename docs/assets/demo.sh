@@ -7,6 +7,15 @@
 # link it prints is that local host's address. The terminal part is
 # demo.tape; the last frames are the shared page, opened in a browser.
 set -euo pipefail
+# A clean environment: only HOME, PATH, TERM, LANG and TMPDIR come in, so no
+# FORGE_* or GIT_* variable the caller has set (FORGE_WORKSPACE,
+# GIT_CONFIG_GLOBAL, GIT_DIR, ...) can point forge or git outside the scratch
+# folder.
+if [ -z "${FORGE_DEMO_CLEAN:-}" ]; then
+  exec env -i FORGE_DEMO_CLEAN=1 HOME="$HOME" PATH="$PATH" TERM="${TERM:-xterm-256color}" LANG="${LANG:-C.UTF-8}" ${TMPDIR:+"TMPDIR=$TMPDIR"} bash "$0" "$@"
+fi
+# Even when started with FORGE_DEMO_CLEAN already set, no FORGE_* or GIT_* survives.
+for v in $(compgen -e); do case "$v" in FORGE_* | GIT_*) unset "$v" ;; esac; done
 assets="$(cd "$(dirname "$0")" && pwd -P)"
 engine="$(cd "$assets/../.." && pwd -P)"
 for t in vhs ttyd ffmpeg python3; do command -v "$t" >/dev/null || { echo "demo.sh needs $t on PATH" >&2; exit 1; }; done
@@ -18,6 +27,8 @@ trap cleanup EXIT
 # Python Playwright is found through the real home folder; only that step uses it.
 real_home="$HOME"
 export HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" TMPDIR="$work/tmp"
+# Named outright as well, so forge and git use only the scratch store and config.
+export FORGE_WORKSPACE="$HOME/.forge" GIT_CONFIG_GLOBAL="$HOME/.gitconfig" GIT_CONFIG_NOSYSTEM=1
 mkdir -p "$HOME" "$TMPDIR" "$work/page"
 git config --global user.name "Demo"
 git config --global user.email "demo@example.org"
@@ -40,7 +51,11 @@ for _ in $(seq 50); do [ -s "$work/host.env" ] && break; sleep 0.1; done
 source "$work/host.env"
 export PATH="$DEMO_NPX_BIN:$HOME/.local/bin:$PATH"
 
-"$engine/bin/install" --no-skill >/dev/null
+# Installed as forge in the scratch home, whatever else is named forge on PATH
+# (the installer would pick forgee then), and checked to be this one before
+# the tape types it.
+"$engine/bin/install" --no-skill --command forge >/dev/null
+[ "$(command -v forge)" = "$HOME/.local/bin/forge" ] || { echo "demo.sh: forge on PATH is $(command -v forge), not the scratch install" >&2; exit 1; }
 forge init >/dev/null
 forge host cloudflare-pages --project site --account demo --url "$DEMO_SITE" >/dev/null
 
