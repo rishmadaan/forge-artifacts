@@ -9,6 +9,10 @@
 # What comes in from the caller: PATH, to find the tools, and HOME, used only
 # to find Python Playwright's browsers (with TERM and LANG). Nothing else.
 # PATH stays trusted: a stray git, node or vhs earlier on it still runs.
+# Started as bash docs/assets/demo.sh, it re-runs under env -i, which also
+# drops exported shell functions. A --clean typed by hand refuses extra
+# exported variables but not imported shell functions, and the caller's own
+# bash startup (BASH_ENV) runs before this line: both stay trusted.
 set -euo pipefail
 # The script re-runs itself with an empty environment, decided by an argument
 # it passes itself, then refuses if anything else came in (a --clean typed by
