@@ -18,12 +18,14 @@ const BASE = "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-25\n\n- the
 const withSection = (s) => BASE.replace("## [0.1.0]", () => s + "## [0.1.0]");
 const NOTES = "## [0.2.0] - 2026-12-01\n\n- the second release's note\n\n";
 
-function repo({ changelog = withSection(NOTES), tests = 0, testScript = null } = {}) {
+function repo({ changelog = withSection(NOTES), tests = 0, testScript = null, gemini = "0.1.0" } = {}) {
   const dir = path.join(tmp("rel"), "forge");
   for (const d of ["bin", "lib", "scripts"]) fs.cpSync(path.join(ENGINE, d), path.join(dir, d), { recursive: true });
   const f = path.join(dir, "bin", "forge");
   fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(VLINE, () => 'const VERSION = "0.1.0";'));
   fs.writeFileSync(path.join(dir, "CHANGELOG.md"), changelog);
+  // The Gemini manifest carries the same version; the release sets both.
+  fs.writeFileSync(path.join(dir, "gemini-extension.json"), fs.readFileSync(path.join(ENGINE, "gemini-extension.json"), "utf8").replace(/^ {2}"version": "[^"]*"/m, '  "version": "' + gemini + '"'));
   fs.mkdirSync(path.join(dir, "test"));
   fs.writeFileSync(path.join(dir, "test", "run.js"), testScript || "process.exit(" + tests + ");\n");
   git(dir, ["init", "-q", "-b", "main"]);
@@ -205,6 +207,16 @@ function section(file, v) {
     assert.deepStrictEqual(state({ dir: other, bare: other }), was, "the repository it was started from is untouched");
   });
 
+  await check("release refuses a gemini-extension.json whose version is not bin/forge's VERSION, or that has no version line", () => {
+    refused(repo({ gemini: "0.0.9" }), ["0.2.0"], /gemini-extension\.json says version 0\.0\.9 and bin\/forge says 0\.1\.0; make them the same first/);
+    refused(repo({ gemini: "0.0.9" }), ["0.1.0"], /gemini-extension\.json says version 0\.0\.9 and bin\/forge says 0\.1\.0/);
+    const r = repo();
+    const f = path.join(r.dir, "gemini-extension.json");
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^ {2}"version": .*\n/m, ""));
+    git(r.dir, ["commit", "-q", "-am", "no version"]);
+    refused(r, ["0.2.0"], /gemini-extension\.json does not have exactly one top-level version line/);
+  });
+
   await check("release refuses a bin/forge with more than one VERSION line", () => {
     const r = repo();
     const f = path.join(r.dir, "bin", "forge");
@@ -219,12 +231,13 @@ function section(file, v) {
     const t = tmp("rel-tmpdir");
     const out = release(r.dir, ["0.2.0"], { env: { TMPDIR: t } });
     assert.strictEqual(out.status, 0, out.all);
-    assert.match(out.out, /setting VERSION in bin\/forge: 0\.1\.0 -> 0\.2\.0[\s\S]*tagged v0\.2\.0[\s\S]*pushed main and v0\.2\.0[\s\S]*this checkout is now at the release/);
+    assert.match(out.out, /setting VERSION in bin\/forge and gemini-extension\.json: 0\.1\.0 -> 0\.2\.0[\s\S]*tagged v0\.2\.0[\s\S]*pushed main and v0\.2\.0[\s\S]*this checkout is now at the release/);
     assert.deepStrictEqual(fs.readdirSync(t), [], "the temporary copy is removed");
     const head = git(r.dir, ["rev-parse", "HEAD"]);
     assert.strictEqual(git(r.dir, ["rev-parse", "HEAD^"]), was);
     assert.strictEqual(git(r.dir, ["log", "-1", "--format=%s"]), "Release 0.2.0");
-    assert.strictEqual(git(r.dir, ["diff", "--numstat", "HEAD^", "HEAD"]), "1\t1\tbin/forge");
+    assert.strictEqual(git(r.dir, ["diff", "--numstat", "HEAD^", "HEAD"]), "1\t1\tbin/forge\n1\t1\tgemini-extension.json");
+    assert.strictEqual(JSON.parse(git(r.bare, ["show", "v0.2.0:gemini-extension.json"])).version, "0.2.0", "the tagged Gemini manifest says the release's version");
     assert.strictEqual(spawnSync(process.execPath, [path.join(r.dir, "bin", "forge"), "--version"], { encoding: "utf8" }).stdout, "Forge 0.2.0\n");
     assert.ok(fs.statSync(path.join(r.dir, "bin", "forge")).mode & 0o100, "bin/forge is still executable");
     assert.strictEqual(git(r.dir, ["cat-file", "-t", "v0.2.0"]), "tag", "an annotated tag");

@@ -13,7 +13,7 @@ const ENGINE = path.resolve(__dirname, "..");
 
 // The release script's VERSION edit (with its commit) and its test run, for the
 // mutant that swaps their order.
-const RELEASE_EDIT = "if [ \"$current\" != \"$version\" ]; then\n  step \"setting VERSION in bin/forge: $current -> $version\"\n  sed -E \"s/$line/const VERSION = \\\"$version\\\";/\" \"$copy/bin/forge\" > \"$work/forge.new\"\n  cat \"$work/forge.new\" > \"$copy/bin/forge\"\n  if [ \"$(node \"$copy/bin/forge\" --version)\" != \"Forge $version\" ] || [ \"$(git -C \"$copy\" diff --numstat -- bin/forge)\" != \"$(printf '1\\t1\\tbin/forge')\" ]; then\n    refuse \"setting VERSION did not change exactly that one line\"\n  fi\n  git -C \"$copy\" add -- bin/forge\n  tree=\"$(git -C \"$copy\" write-tree)\"\n  git -C \"$copy\" commit -q -m \"Release $version\" -- bin/forge\n  [ \"$(git -C \"$copy\" rev-parse 'HEAD^{tree}')\" = \"$tree\" ] || refuse \"the Release $version commit is not the tree that was checked (a commit hook changed it?)\"\n  step \"committed: Release $version\"\nelse\n  step \"bin/forge already says $version: tagging HEAD\"\nfi\nrelease=\"$(git -C \"$copy\" rev-parse HEAD)\"\n";
+const RELEASE_EDIT = "if [ \"$current\" != \"$version\" ]; then\n  step \"setting VERSION in bin/forge and gemini-extension.json: $current -> $version\"\n  sed -E \"s/$line/const VERSION = \\\"$version\\\";/\" \"$copy/bin/forge\" > \"$work/forge.new\"\n  cat \"$work/forge.new\" > \"$copy/bin/forge\"\n  sed -E \"s/^(  \\\"version\\\": \\\")[0-9.]+(\\\",?)$/\\\\1$version\\\\2/\" \"$copy/gemini-extension.json\" > \"$work/gemini.new\"\n  cat \"$work/gemini.new\" > \"$copy/gemini-extension.json\"\n  if [ \"$(node \"$copy/bin/forge\" --version)\" != \"Forge $version\" ] || [ \"$(grep -E \"$gline\" \"$copy/gemini-extension.json\" | cut -d'\"' -f4)\" != \"$version\" ] ||\n    [ \"$(git -C \"$copy\" diff --numstat -- bin/forge gemini-extension.json)\" != \"$(printf '1\\t1\\tbin/forge\\n1\\t1\\tgemini-extension.json')\" ]; then\n    refuse \"setting VERSION did not change exactly that one line in each file\"\n  fi\n  git -C \"$copy\" add -- bin/forge gemini-extension.json\n  tree=\"$(git -C \"$copy\" write-tree)\"\n  git -C \"$copy\" commit -q -m \"Release $version\" -- bin/forge gemini-extension.json\n  [ \"$(git -C \"$copy\" rev-parse 'HEAD^{tree}')\" = \"$tree\" ] || refuse \"the Release $version commit is not the tree that was checked (a commit hook changed it?)\"\n  step \"committed: Release $version\"\nelse\n  step \"bin/forge already says $version: tagging HEAD\"\nfi\nrelease=\"$(git -C \"$copy\" rev-parse HEAD)\"\n";
 const RELEASE_TESTS = "\n# The tests run on exactly the commit to be tagged, and must leave it so.\nstep \"running the tests at $version (node test/run.js)\"\n(cd \"$copy\" && node test/run.js) || refuse \"the tests failed at $version\"\n";
 
 const MUTANTS = [
@@ -2447,6 +2447,24 @@ const MUTANTS = [
     replace: "true || refuse",
     test: "release.test.js",
     expect: /release refuses a bin\/forge with more than one VERSION line/,
+  },
+  {
+    id: "release-gemini-match",
+    what: "release.sh no longer refuses a gemini-extension.json whose version differs from bin/forge's, so a release can tag a Gemini manifest that says another version",
+    file: "scripts/release.sh",
+    find: "[ \"$gcurrent\" = \"$current\" ] || refuse",
+    replace: "true || refuse",
+    test: "release.test.js",
+    expect: /release refuses a gemini-extension\.json whose version is not bin\/forge's VERSION/,
+  },
+  {
+    id: "release-gemini-set",
+    what: "release.sh sets VERSION in bin/forge only, so the tagged gemini-extension.json still says the old version",
+    file: "scripts/release.sh",
+    find: "  sed -E \"s/^(  \\\"version\\\": \\\")[0-9.]+(\\\",?)$/\\\\1$version\\\\2/\" \"$copy/gemini-extension.json\" > \"$work/gemini.new\"\n  cat \"$work/gemini.new\" > \"$copy/gemini-extension.json\"\n  if [ \"$(node \"$copy/bin/forge\" --version)\" != \"Forge $version\" ] || [ \"$(grep -E \"$gline\" \"$copy/gemini-extension.json\" | cut -d'\"' -f4)\" != \"$version\" ] ||\n    [ \"$(git -C \"$copy\" diff --numstat -- bin/forge gemini-extension.json)\" != \"$(printf '1\\t1\\tbin/forge\\n1\\t1\\tgemini-extension.json')\" ]; then\n",
+    replace: "  if [ \"$(node \"$copy/bin/forge\" --version)\" != \"Forge $version\" ] || [ \"$(git -C \"$copy\" diff --numstat -- bin/forge)\" != \"$(printf '1\\t1\\tbin/forge')\" ]; then\n",
+    test: "release.test.js",
+    expect: /release X\.Y\.Z: a Release commit/,
   },
   {
     id: "release-atomic",

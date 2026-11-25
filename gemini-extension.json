@@ -1,0 +1,5 @@
+{
+  "name": "forge-artifacts",
+  "version": "0.1.0",
+  "description": "Publish your agents' pages as private links, then share them on a link site you own: every version frozen, plain files in your git repository. Gives Gemini the publish skill; the forge command comes from a clone of the repository (bin/install --no-skill)."
+}

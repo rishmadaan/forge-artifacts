@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Releases Forge X.Y.Z: checks this checkout first, then builds the release in
-# a temporary copy of it: sets VERSION in bin/forge (a "Release X.Y.Z" commit,
-# only when it differs), runs the tests there, tags vX.Y.Z and pushes main and
-# the tag together to origin. Only then is this checkout brought up to the
+# a temporary copy of it: sets VERSION in bin/forge, and the same version in
+# gemini-extension.json (one "Release X.Y.Z" commit, only when it differs),
+# runs the tests there, tags vX.Y.Z and pushes main and the tag together to
+# origin. Only then is this checkout brought up to the
 # release (fast-forward only). The tag starts the release workflow, which
 # tests again and makes the GitHub Release from the CHANGELOG section.
 #   scripts/release.sh <X.Y.Z>
@@ -47,6 +48,12 @@ if printf '%s\n' "$origin_refs" | awk -v t="refs/tags/$tag" '$2 == t { f = 1 } E
 line='^const VERSION = "[0-9]+\.[0-9]+\.[0-9]+";$'
 [ "$(grep -cE "$line" bin/forge)" = 1 ] || refuse "bin/forge does not have exactly one VERSION line"
 current="$(grep -E "$line" bin/forge | cut -d'"' -f2)"
+# gemini-extension.json must carry a version (Gemini CLI refuses one without);
+# it always says bin/forge's VERSION, and the Release commit sets both.
+gline='^  "version": "[0-9]+\.[0-9]+\.[0-9]+",?$'
+[ "$(grep -cE "$gline" gemini-extension.json 2>/dev/null)" = 1 ] || refuse "gemini-extension.json does not have exactly one top-level version line"
+gcurrent="$(grep -E "$gline" gemini-extension.json | cut -d'"' -f4)"
+[ "$gcurrent" = "$current" ] || refuse "gemini-extension.json says version $gcurrent and bin/forge says $current; make them the same first"
 
 # Is X.Y.Z $1 newer than $2? Compared as numbers, part by part.
 newer() {
@@ -93,15 +100,18 @@ push_url="$(git remote get-url --push origin)"
 case "$push_url" in /* | *:*) ;; *) push_url="$checkout/$push_url" ;; esac
 
 if [ "$current" != "$version" ]; then
-  step "setting VERSION in bin/forge: $current -> $version"
+  step "setting VERSION in bin/forge and gemini-extension.json: $current -> $version"
   sed -E "s/$line/const VERSION = \"$version\";/" "$copy/bin/forge" > "$work/forge.new"
   cat "$work/forge.new" > "$copy/bin/forge"
-  if [ "$(node "$copy/bin/forge" --version)" != "Forge $version" ] || [ "$(git -C "$copy" diff --numstat -- bin/forge)" != "$(printf '1\t1\tbin/forge')" ]; then
-    refuse "setting VERSION did not change exactly that one line"
+  sed -E "s/^(  \"version\": \")[0-9.]+(\",?)$/\\1$version\\2/" "$copy/gemini-extension.json" > "$work/gemini.new"
+  cat "$work/gemini.new" > "$copy/gemini-extension.json"
+  if [ "$(node "$copy/bin/forge" --version)" != "Forge $version" ] || [ "$(grep -E "$gline" "$copy/gemini-extension.json" | cut -d'"' -f4)" != "$version" ] ||
+    [ "$(git -C "$copy" diff --numstat -- bin/forge gemini-extension.json)" != "$(printf '1\t1\tbin/forge\n1\t1\tgemini-extension.json')" ]; then
+    refuse "setting VERSION did not change exactly that one line in each file"
   fi
-  git -C "$copy" add -- bin/forge
+  git -C "$copy" add -- bin/forge gemini-extension.json
   tree="$(git -C "$copy" write-tree)"
-  git -C "$copy" commit -q -m "Release $version" -- bin/forge
+  git -C "$copy" commit -q -m "Release $version" -- bin/forge gemini-extension.json
   [ "$(git -C "$copy" rev-parse 'HEAD^{tree}')" = "$tree" ] || refuse "the Release $version commit is not the tree that was checked (a commit hook changed it?)"
   step "committed: Release $version"
 else

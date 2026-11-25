@@ -72,8 +72,8 @@ Tests make scratch stores and a scratch home folder under the OS temp folder.
    no leading zeros and is higher than `VERSION` and every release tag on
    origin (only the first release tags `VERSION` as it is), the tag is new
    here and on origin, and the CHANGELOG section has notes. Then it works in
-   a temporary copy of the checkout: sets `VERSION` in `bin/forge` and makes
-   the `Release X.Y.Z` commit (checking a commit hook did not change it), runs
+   a temporary copy of the checkout: sets `VERSION` in `bin/forge` and the
+   version in `gemini-extension.json`, and makes the `Release X.Y.Z` commit (checking a commit hook did not change it), runs
    the tests on that commit (they must leave its tracked and untracked files
    as they were),
    tags `vX.Y.Z` and pushes `main` and the tag together. Any failure before
