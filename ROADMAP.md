@@ -55,8 +55,8 @@ of a date. Open an issue to suggest one, or to say which you need first.
 
 ## Done
 
-- [x] **Store listings** (2026-11-25): Forge's `publish` skill installs from
-  Claude Code's plugin store, the Gemini CLI extension gallery and skills.sh;
+- [x] **Store listings** (RELEASE_DATE): Forge's `publish` skill installs as a
+  Claude Code plugin, a Gemini CLI extension, or with skills.sh;
   `bin/install --no-skill` adds the command beside it.
 - [x] **macOS checks in CI** (2026-11-25): the full test suite runs on Linux
   and macOS with every change, including the store lock's `lsof` path.
