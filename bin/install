@@ -17,7 +17,15 @@
 // file ("command") and kept on every later run; --command forge|forgee
 // chooses explicitly (and is recorded too).
 //
-//   bin/install [--command forge|forgee]   make the links
+// --no-skill links the command only, for a machine whose agents get the skill
+// another way (a plugin, an extension, skills.sh). It removes the skill links
+// this checkout's installer made, and only those it can prove: a link with
+// this installer's text that resolves to this checkout's skills/publish.
+// Anything else at those paths is left alone and named. The choice is
+// recorded in the setting file ("skill": false) and kept on every later run;
+// --skill links the skill again (and records that).
+//
+//   bin/install [--command forge|forgee] [--no-skill | --skill]   make the links
 //   bin/install --check                     report, change nothing (exit 1 if not installed)
 //   bin/install --uninstall                 remove only the links this installer made
 const fs = require("node:fs");
@@ -30,7 +38,7 @@ const HOME = os.homedir();
 const settings = require(path.join(ENGINE, "lib", "settings.js"));
 const BIN = path.join(HOME, ".local", "bin");
 const usage = () => {
-  console.error("usage: bin/install [--command forge|forgee] | --check | --uninstall");
+  console.error("usage: bin/install [--command forge|forgee] [--no-skill | --skill] | --check | --uninstall");
   process.exit(1);
 };
 
@@ -56,23 +64,28 @@ function otherForge() {
 const args = process.argv.slice(2);
 let mode = "install";
 let chosen = null;
+let skillChosen = null; // true for --skill, false for --no-skill
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--command") {
     chosen = args[++i];
     if (chosen !== "forge" && chosen !== "forgee") usage();
-  } else if ((args[i] === "--check" || args[i] === "--uninstall") && mode === "install") mode = args[i];
+  } else if ((args[i] === "--no-skill" || args[i] === "--skill") && skillChosen === null) skillChosen = args[i] === "--skill";
+  else if ((args[i] === "--check" || args[i] === "--uninstall") && mode === "install") mode = args[i];
   else usage();
 }
-if (chosen && mode !== "install") usage();
+if ((chosen || skillChosen !== null) && mode !== "install") usage();
 
 let recorded;
+let recordedSkill;
 try {
-  recorded = settings.read().command;
+  ({ command: recorded, skill: recordedSkill } = settings.read());
 } catch (e) {
   console.error(e.message + "\nnothing was changed");
   process.exit(1);
 }
 let command = chosen || recorded || "forge";
+// The skill is not linked when --no-skill is given, or was recorded and not overridden by --skill.
+const noSkill = skillChosen === null ? recordedSkill === false : !skillChosen;
 let other = null;
 if (mode === "install" && !chosen && !recorded) {
   other = otherForge();
@@ -106,6 +119,22 @@ for (const l of states) if (l.via !== undefined && l.s === "ours" && states[l.vi
 // A skill link left to another tool: taken itself, or (the claude link, not
 // yet ours) pointing through a taken agents path.
 const skipped = (l) => l.skill && (l.s === "foreign" || (l.via !== undefined && l.s === "missing" && states[l.via].s === "foreign"));
+// For --no-skill: a skill link this checkout's installer can prove it made,
+// so it may remove it. Its text is this installer's, and it resolves to this
+// checkout's skill folder (a dangling link, or one through another folder,
+// proves nothing). Decided for every link before any is removed, since the
+// claude link resolves through the agents link.
+const SKILL_DIR = path.join(ENGINE, "skills", "publish");
+const real = (p) => {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return null;
+  }
+};
+for (const l of states) l.proven = l.skill && l.s === "ours" && real(l.at) === real(SKILL_DIR);
+// --check under --no-skill: a skill path not linked by this installer is the choice, whatever is there.
+const notLinked = (l) => l.skill && noSkill && l.s !== "ours";
 
 const SKILL_FILE = path.join(ENGINE, "skills", "publish", "SKILL.md");
 const pathNote = () => {
@@ -116,12 +145,16 @@ if (mode === "--check") {
   // whether agents reading that folder get Forge's skill or another tool's.
   for (const l of states) {
     if (l.skill && l.s === "ours") console.log("linked: " + l.at + " -> " + l.to);
+    else if (notLinked(l)) {
+      console.log("not linked, by choice: " + l.at + " (--no-skill, recorded in " + settings.file() + "; bin/install --skill links it)" +
+        (l.s === "missing" ? "" : "; something this installer did not make is there: Forge's skill from a plugin store, or another tool's publish skill (it cannot tell which)"));
+    }
     else if (skipped(l)) console.log("skipped: " + l.at + " (another tool's publish skill is there; agents that read skills from it get that one, so point them at " + SKILL_FILE + ")");
     else console.log({ ours: "ok", missing: "MISSING", foreign: "NOT OURS (something else is there)" }[l.s] + ": " + l.at + (l.s === "ours" ? " -> " + l.to : ""));
   }
   console.log("command: " + command + (recorded ? " (recorded in " + settings.file() + ")" : ""));
   pathNote();
-  process.exit(states.every((l) => l.s === "ours" || skipped(l)) ? 0 : 1);
+  process.exit(states.every((l) => l.s === "ours" || skipped(l) || notLinked(l)) ? 0 : 1);
 }
 
 if (mode === "--uninstall") {
@@ -152,7 +185,19 @@ if (command !== "forge" || chosen) {
   settings.write({ command });
   console.log("recorded in " + settings.file() + ": the command is " + command);
 }
+if (skillChosen !== null) {
+  settings.write({ skill: skillChosen });
+  console.log("recorded in " + settings.file() + ": the publish skill is " + (skillChosen ? "linked" : "not linked (--no-skill)"));
+} else if (noSkill) console.log("the publish skill is not linked, by the choice recorded in " + settings.file() + " (--no-skill); bin/install --skill links it");
 for (const l of states) {
+  if (l.skill && noSkill) {
+    if (l.proven) {
+      fs.unlinkSync(l.at);
+      console.log("removed (--no-skill): " + l.at);
+    } else if (l.s === "missing") console.log("not linked (--no-skill): " + l.at);
+    else console.log("left alone (--no-skill removes only this checkout's own skill links): " + l.at + " is " + whatIs(l.at));
+    continue;
+  }
   if (l.s === "ours") {
     console.log("already linked: " + l.at);
     continue;

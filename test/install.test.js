@@ -227,6 +227,82 @@ const OURS = {
     assert.match(r.err, /usage/);
   });
 
+  await check("--no-skill links the command only and records the choice; a later bin/install keeps it; --check passes and says not linked by choice; --skill links it again", () => {
+    const home = tmp("home");
+    let r = install(home, "--no-skill");
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), { forge: OURS.forge, agents: null, claude: null });
+    assert.deepStrictEqual(settingsOf(home), { skill: false });
+    r = install(home);
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), { forge: OURS.forge, agents: null, claude: null }, "a later bin/install keeps the choice");
+    assert.match(r.out, /not linked, by the choice recorded in .*settings\.json \(--no-skill\); bin\/install --skill links it/);
+    r = install(home, "--check");
+    assert.strictEqual(r.status, 0, r.out);
+    for (const k of ["agents", "claude"]) assert.ok(r.out.includes("not linked, by choice: " + P(home)[k] + " (--no-skill, recorded in "), k + ":\n" + r.out);
+    assert.ok(!/^MISSING: /m.test(r.out), r.out);
+    r = install(home, "--skill");
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), OURS);
+    assert.deepStrictEqual(settingsOf(home), { skill: true });
+    r = install(home, "--check");
+    assert.ok(r.out.includes("linked: " + P(home).agents + " -> ") && r.out.includes("linked: " + P(home).claude + " -> "), r.out);
+    for (const bad of [["--no-skill", "--skill"], ["--check", "--no-skill"], ["--uninstall", "--skill"]]) assert.strictEqual(install(home, ...bad).status, 1, bad.join(" "));
+  });
+
+  await check("--no-skill after a full install removes exactly this checkout's two skill links and keeps the command", () => {
+    const home = tmp("home");
+    install(home);
+    const r = install(home, "--no-skill");
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), { forge: OURS.forge, agents: null, claude: null });
+    for (const k of ["agents", "claude"]) assert.ok(r.out.includes("removed (--no-skill): " + P(home)[k]), r.out);
+    assert.ok(fs.existsSync(path.join(ENGINE, "skills", "publish", "SKILL.md")), "the engine's own skill is untouched");
+  });
+
+  await check("--no-skill removes only links it can prove are this checkout's: another checkout's link, a real folder, a link through another tool's folder and a dangling link are left alone and named", () => {
+    // Another checkout's skill link at the agents path; the claude link with this installer's text, through it.
+    let home = tmp("home");
+    const otherSkill = path.join(tmp("other-checkout"), "skills", "publish");
+    fs.mkdirSync(otherSkill, { recursive: true });
+    fs.writeFileSync(path.join(otherSkill, "SKILL.md"), "another checkout's skill\n");
+    let p = P(home);
+    fs.mkdirSync(path.dirname(p.agents), { recursive: true });
+    fs.symlinkSync(otherSkill, p.agents);
+    fs.mkdirSync(path.dirname(p.claude), { recursive: true });
+    fs.symlinkSync(path.join("..", "..", ".agents", "skills", "publish"), p.claude);
+    let r = install(home, "--no-skill");
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), { forge: OURS.forge, agents: "-> " + otherSkill, claude: "-> ../../.agents/skills/publish" }, "both links are still there, pointing where they did");
+    for (const k of ["agents", "claude"]) assert.ok(r.out.includes("left alone (--no-skill removes only this checkout's own skill links): " + p[k] + " is a link to "), k + ":\n" + r.out);
+    assert.strictEqual(fs.readFileSync(path.join(otherSkill, "SKILL.md"), "utf8"), "another checkout's skill\n");
+    // A real folder at the agents path, a link elsewhere at the claude path.
+    home = tmp("home");
+    p = P(home);
+    fs.mkdirSync(p.agents, { recursive: true });
+    fs.writeFileSync(path.join(p.agents, "SKILL.md"), "a skills.sh copy\n");
+    fs.mkdirSync(path.dirname(p.claude), { recursive: true });
+    fs.symlinkSync(otherSkill, p.claude);
+    r = install(home, "--no-skill");
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), { forge: OURS.forge, agents: "dir", claude: "-> " + otherSkill });
+    assert.strictEqual(fs.readFileSync(path.join(p.agents, "SKILL.md"), "utf8"), "a skills.sh copy\n");
+    assert.ok(r.out.includes(p.agents + " is a file or folder"), r.out);
+    // --check: the choice, and that it cannot tell a store's copy of Forge's skill from another tool's.
+    const c = install(home, "--check");
+    assert.strictEqual(c.status, 0, c.out);
+    assert.ok(c.out.includes("not linked, by choice: " + p.agents + " (--no-skill, recorded in ") && c.out.includes("(it cannot tell which)"), c.out);
+    // Ours at the claude path, but dangling: the agents link was removed by hand first.
+    home = tmp("home");
+    p = P(home);
+    install(home);
+    fs.unlinkSync(p.agents);
+    r = install(home, "--no-skill");
+    assert.strictEqual(r.status, 0, r.err);
+    assert.deepStrictEqual(state(home), { forge: OURS.forge, agents: null, claude: OURS.claude }, "a dangling link proves nothing, so it stays");
+    assert.ok(r.out.includes("left alone (--no-skill removes only this checkout's own skill links): " + p.claude + " is a link to ../../.agents/skills/publish"), r.out);
+  });
+
   done();
 })().catch((e) => {
   console.error(e);
