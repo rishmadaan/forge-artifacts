@@ -10,6 +10,8 @@ so under that release. To update a copy cloned with git, run `forge update`
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-26
+
 - Install Forge's `publish` skill from your agent's plugin store: Claude Code (`claude plugin marketplace add rishmadaan/forge-artifacts`, then `claude plugin install forge-artifacts@forge-artifacts`), Gemini CLI (`gemini extensions install https://github.com/rishmadaan/forge-artifacts`) or skills.sh (`npx skills add rishmadaan/forge-artifacts`). The `forge` command still comes from a clone of this repository. `forge update` updates the command; a skill from a plugin store updates through that store (`claude plugin update forge-artifacts@forge-artifacts`, `gemini extensions update forge-artifacts`, `npx skills update`).
 - `bin/install --no-skill` links the command only, for an agent that gets the skill from a store. It removes the skill links this checkout made earlier, and only those; the choice is recorded and kept by later runs (`bin/install --skill` links the skill again). `bin/install --check` says `not linked, by choice:` for each skill path.
 - The `publish` skill now tells an agent how to install the command when it is missing, with your yes first.
@@ -28,5 +30,6 @@ The first public release.
 - Every page gets a dark-mode switch (unless it is dark-only) and Markdown copy and download buttons; your source file is not changed.
 - `bin/install` links the command and the `publish` skill for agents, as `forgee` where another program already owns the name `forge`.
 
-[Unreleased]: https://github.com/rishmadaan/forge-artifacts/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rishmadaan/forge-artifacts/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/rishmadaan/forge-artifacts/releases/tag/v0.1.1
 [0.1.0]: https://github.com/rishmadaan/forge-artifacts/releases/tag/v0.1.0

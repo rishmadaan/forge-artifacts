@@ -55,7 +55,7 @@ of a date. Open an issue to suggest one, or to say which you need first.
 
 ## Done
 
-- [x] **Store listings** (RELEASE_DATE): Forge's `publish` skill installs as a
+- [x] **Store listings** (2026-11-26): Forge's `publish` skill installs as a
   Claude Code plugin, a Gemini CLI extension, or with skills.sh;
   `bin/install --no-skill` adds the command beside it.
 - [x] **macOS checks in CI** (2026-11-25): the full test suite runs on Linux
