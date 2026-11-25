@@ -32,9 +32,9 @@ function stack(t) {
   ].join("\n");
   return [
     page(732, 32, "v1", false), page(750, 50, "v2", false), page(768, 68, "v3", true),
-    `<rect x="716" y="208" width="232" height="36" rx="18" fill="${t.card}" stroke="${t.line}"/>`,
-    globe(728, 215, t.accent),
-    text(760, 231, "your.site/d/k3Jq9xW2aB7c/", { size: 12, mono: true, fill: t.ink }),
+    `<rect x="704" y="208" width="244" height="36" rx="18" fill="${t.card}" stroke="${t.line}"/>`,
+    globe(716, 215, t.accent),
+    text(748, 231, "your.site/d/k3Jq9xW2aB7c/", { size: 12, mono: true, fill: t.ink }),
   ].join("\n");
 }
 
@@ -43,7 +43,8 @@ function hero(t) {
   let px = 48;
   const pill = pills.map((p) => {
     const w = p.length * 8.4 + 28;
-    const g = `<rect x="${px}" y="214" width="${w}" height="34" rx="17" fill="${t.accentSoft}"/>` + text(px + 14, 236, p, { size: 15, weight: 600, fill: t.accent });
+    // Centred, so the padding is even whatever font the viewer has.
+    const g = `<rect x="${px}" y="214" width="${w}" height="34" rx="17" fill="${t.accentSoft}"/>` + text(px + w / 2, 236, p, { size: 15, weight: 600, fill: t.accent, anchor: "middle" });
     px += w + 12;
     return g;
   }).join("\n");
