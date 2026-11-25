@@ -39,7 +39,7 @@ const done = () => {
 const made = [];
 process.on("exit", () => { for (const d of made) fs.rmSync(d, { recursive: true, force: true }); });
 function tmp(prefix) {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "forge-test-" + prefix + "-"));
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "forge-test-" + prefix + "-")));
   made.push(d);
   return d;
 }

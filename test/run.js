@@ -10,7 +10,9 @@ const { spawnSync } = require("node:child_process");
 const os = require("node:os");
 const dir = __dirname;
 // Every test's scratch stores go in one folder, removed when the run ends.
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "forge-run-"));
+// Real path: on macOS the temp folder is under /var, a link to /private/var,
+// and forge prints real paths.
+const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "forge-run-")));
 process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
 const files = fs.readdirSync(dir).filter((f) => f.endsWith(".test.js")).sort();
 let failed = 0;
