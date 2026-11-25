@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+// Links the engine into this machine's home folder:
+//   ~/.local/bin/forge            -> <engine>/bin/forge   (or forgee, below)
+//   ~/.agents/skills/publish      -> <engine>/skills/publish
+//   ~/.claude/skills/publish      -> ../../.agents/skills/publish
+// The same pattern the other global skills use. Idempotent. It never replaces
+// anything at those paths that it did not create (a link is "ours" only when
+// it points exactly where this installer would point it). A taken command
+// path refuses the whole install, changing nothing. A taken skill path (another
+// tool's publish skill) is skipped with a note, and the command still installs;
+// the claude link is skipped too (and left alone by --uninstall, even when it
+// reads exactly like ours) when the agents path it points through is taken.
+//
+// The command's name: forge, unless another program named forge is already on
+// PATH (one whose --version does not print "Forge <version>"); then forgee,
+// so that program keeps its name. The choice is recorded in the user setting
+// file ("command") and kept on every later run; --command forge|forgee
+// chooses explicitly (and is recorded too).
+//
+//   bin/install [--command forge|forgee]   make the links
+//   bin/install --check                     report, change nothing (exit 1 if not installed)
+//   bin/install --uninstall                 remove only the links this installer made
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const ENGINE = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
+const HOME = os.homedir();
+const settings = require(path.join(ENGINE, "lib", "settings.js"));
+const BIN = path.join(HOME, ".local", "bin");
+const usage = () => {
+  console.error("usage: bin/install [--command forge|forgee] | --check | --uninstall");
+  process.exit(1);
+};
+
+// The first program named forge on PATH that is not this tool, or null. This
+// tool is our own file, or anything whose --version prints "Forge <version>".
+function otherForge() {
+  const ours = fs.realpathSync(path.join(ENGINE, "bin", "forge"));
+  for (const dir of (process.env.PATH || "").split(path.delimiter)) {
+    if (!dir) continue;
+    const p = path.join(dir, "forge");
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      if (!fs.statSync(p).isFile() || fs.realpathSync(p) === ours) continue;
+    } catch {
+      continue;
+    }
+    const r = spawnSync(p, ["--version"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
+    if (!/^Forge \d/.test(r.stdout || "")) return p;
+  }
+  return null;
+}
+
+const args = process.argv.slice(2);
+let mode = "install";
+let chosen = null;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--command") {
+    chosen = args[++i];
+    if (chosen !== "forge" && chosen !== "forgee") usage();
+  } else if ((args[i] === "--check" || args[i] === "--uninstall") && mode === "install") mode = args[i];
+  else usage();
+}
+if (chosen && mode !== "install") usage();
+
+let recorded;
+try {
+  recorded = settings.read().command;
+} catch (e) {
+  console.error(e.message + "\nnothing was changed");
+  process.exit(1);
+}
+let command = chosen || recorded || "forge";
+let other = null;
+if (mode === "install" && !chosen && !recorded) {
+  other = otherForge();
+  if (other) command = "forgee";
+}
+
+const LINKS = [
+  { at: path.join(BIN, command), to: path.join(ENGINE, "bin", "forge") },
+  { at: path.join(HOME, ".agents", "skills", "publish"), to: path.join(ENGINE, "skills", "publish"), skill: true },
+  { at: path.join(HOME, ".claude", "skills", "publish"), to: path.join("..", "..", ".agents", "skills", "publish"), skill: true, via: 1 },
+];
+
+function state(l) {
+  let st;
+  try {
+    st = fs.lstatSync(l.at);
+  } catch {
+    return "missing";
+  }
+  if (st.isSymbolicLink() && fs.readlinkSync(l.at) === l.to) return "ours";
+  return "foreign";
+}
+
+const whatIs = (at) => (fs.lstatSync(at).isSymbolicLink() ? "a link to " + fs.readlinkSync(at) : "a file or folder");
+const states = LINKS.map((l) => ({ ...l, s: state(l) }));
+// The claude link reads as ours by its text alone; through another tool's
+// agents folder it serves that tool's skill, so it is that tool's: never
+// reported linked, never removed.
+// (through: so it is labelled by that, not as a link this installer did not make).
+for (const l of states) if (l.via !== undefined && l.s === "ours" && states[l.via].s === "foreign") Object.assign(l, { s: "foreign", through: true });
+// A skill link left to another tool: taken itself, or (the claude link, not
+// yet ours) pointing through a taken agents path.
+const skipped = (l) => l.skill && (l.s === "foreign" || (l.via !== undefined && l.s === "missing" && states[l.via].s === "foreign"));
+
+const SKILL_FILE = path.join(ENGINE, "skills", "publish", "SKILL.md");
+const pathNote = () => {
+  if (!(process.env.PATH || "").split(path.delimiter).includes(BIN)) console.log("note: " + BIN + " is not on PATH; add it so `" + command + "` runs from any folder");
+};
+if (mode === "--check") {
+  // Each skill link is labelled linked or skipped, so a setup guide can tell
+  // whether agents reading that folder get Forge's skill or another tool's.
+  for (const l of states) {
+    if (l.skill && l.s === "ours") console.log("linked: " + l.at + " -> " + l.to);
+    else if (skipped(l)) console.log("skipped: " + l.at + " (another tool's publish skill is there; agents that read skills from it get that one, so point them at " + SKILL_FILE + ")");
+    else console.log({ ours: "ok", missing: "MISSING", foreign: "NOT OURS (something else is there)" }[l.s] + ": " + l.at + (l.s === "ours" ? " -> " + l.to : ""));
+  }
+  console.log("command: " + command + (recorded ? " (recorded in " + settings.file() + ")" : ""));
+  pathNote();
+  process.exit(states.every((l) => l.s === "ours" || skipped(l)) ? 0 : 1);
+}
+
+if (mode === "--uninstall") {
+  // Both names: a link of ours under the other name (an earlier choice) goes too.
+  const alt = { at: path.join(BIN, command === "forge" ? "forgee" : "forge"), to: path.join(ENGINE, "bin", "forge") };
+  if (state(alt) === "ours") states.push({ ...alt, s: "ours" });
+  for (const l of states) {
+    if (l.s === "ours") {
+      fs.unlinkSync(l.at);
+      console.log("removed: " + l.at);
+    } else if (l.s === "foreign") console.log("left alone (not made by this installer, or it points through another tool's folder): " + l.at);
+    else console.log("not installed: " + l.at);
+  }
+  process.exit(0);
+}
+
+const foreign = states.filter((l) => l.s === "foreign" && !l.skill);
+if (foreign.length) {
+  for (const l of foreign) {
+    console.error("refusing: " + l.at + " is " + whatIs(l.at) + ", not made by this installer. Move it aside, then run bin/install again" +
+      (l.at === path.join(BIN, "forge") ? " (or install the command as forgee: bin/install --command forgee)." : "."));
+  }
+  console.error("nothing was changed");
+  process.exit(1);
+}
+if (other) console.log("another program named forge is on PATH: " + other + "; it keeps that name, and this one is installed as forgee");
+if (command !== "forge" || chosen) {
+  settings.write({ command });
+  console.log("recorded in " + settings.file() + ": the command is " + command);
+}
+for (const l of states) {
+  if (l.s === "ours") {
+    console.log("already linked: " + l.at);
+    continue;
+  }
+  if (skipped(l)) {
+    console.log("skipped: " + l.at + (l.through ? " points through " + states[l.via].at + ", which another tool uses" : l.s === "foreign" ? " is " + whatIs(l.at) + ", not made by this installer" : " would point through " + states[l.via].at + ", which another tool uses") +
+      "; the publish skill is not linked there (agents that read it can be pointed at " + SKILL_FILE + ")");
+    continue;
+  }
+  fs.mkdirSync(path.dirname(l.at), { recursive: true });
+  fs.symlinkSync(l.to, l.at);
+  console.log("linked: " + l.at + " -> " + l.to);
+}
+pathNote();

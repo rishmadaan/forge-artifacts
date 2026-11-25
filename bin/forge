@@ -1,0 +1,1326 @@
+#!/usr/bin/env node
+// Forge CLI. One command publishes a page (one HTML file, or a
+// folder with index.html and its images) into the store: private until shared,
+// every version frozen, everything in git. docs/reference.md describes every command.
+//
+// Output contract. Every write command ends by building one outcome record of
+// three facts, each yes, no or unknown, each set only from a successful read
+// of durable state (never from which call failed): saved (is the change, or
+// the state it asked for, on the store's remote), site (do the live marker and
+// the remote's public/ and host setting agree, both read in the same pass), local (did this
+// machine's copy catch up). One function (report) prints the result from that
+// record and picks the exit code. A caller reads the exit code first:
+//   0   finished: saved, and the link site confirmed to show it;
+//       on a store with no host, 0 reads no link site (there is none)
+//   1   refused or failed before anything was saved; nothing was changed
+//       (or: forge check found problems)
+//   3   saved, but not finished: the link site is not confirmed (or a step
+//       after saving failed). The result lines are still printed on stdout:
+//       the private: line always, public: only when the link site was
+//       confirmed. stderr says what is left; finish with: forge deploy
+//       (forge host names its two fixes there instead: a deploy cannot fix a wrong project)
+//   4   not known whether the change was saved: the push got no answer and
+//       the store's remote could not be read afterwards. When online, run
+//       forge sync, then forge list: if the change is there, run forge deploy
+//       to finish; if it is not, run the same command again.
+//   75  another forge command held the store lock too long; nothing was changed
+//
+// The phase line is the push: before it, a failure is exit 1, nothing
+// changed; from the push attempt on, nothing may say "nothing changed" or exit
+// 1 (except a push the remote is read to have refused). An exception that
+// escapes after the push attempt is reported by the top handler as 3 or 4.
+//
+// How a write works (see lib/git.js): the change is made in a throwaway git
+// worktree at the remote's head, checked and committed there, and pushed; the
+// push is the commit point. This machine's copy of the store only ever
+// fast-forwards. Then the link site is made to serve the pushed commit's
+// public/ and read back. Result lines are built last, from the manifest at the
+// final commit, so they describe what is true, not what the command meant.
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync, spawn } = require("node:child_process");
+const { pathToFileURL } = require("node:url");
+
+const BIN = fs.realpathSync(__filename);
+const ENGINE = path.resolve(path.dirname(BIN), "..");
+const core = require(path.join(ENGINE, "lib", "core.js"));
+const workspace = require(path.join(ENGINE, "lib", "workspace.js"));
+const git = require(path.join(ENGINE, "lib", "git.js"));
+const lock = require(path.join(ENGINE, "lib", "lock.js"));
+const settings = require(path.join(ENGINE, "lib", "settings.js"));
+const { upload, readLive, MARKER, siteOf, sameSite, sameDeploy } = require(path.join(ENGINE, "lib", "deploy.js"));
+const hosts = require(path.join(ENGINE, "lib", "hosts", "index.js"));
+const { readSecret } = require(path.join(ENGINE, "lib", "secrets.js"));
+
+// The one place the version lives: scripts/release.sh rewrites this exact
+// line, the release workflow checks the tag against it, forge update compares
+// release tags with it, and --version prints it.
+const VERSION = "0.1.0";
+
+// The name this tool was started as (forge, or forgee where another program
+// owns that name), recorded once so the copy the store lock re-launches and
+// every library message print the same name. Only a plain word is taken.
+if (!process.env.FORGE_INVOKED_AS) {
+  const n = path.basename(process.argv[1] || "");
+  process.env.FORGE_INVOKED_AS = /^[A-Za-z0-9._-]+$/.test(n) ? n : "forge";
+}
+const CMD = require(path.join(ENGINE, "lib", "command.js"))();
+const { shq } = require(path.join(ENGINE, "lib", "command.js"));
+
+// The two next steps every surface carries word for word (USAGE, docs/reference.md, the skill).
+
+// Every refusal of a value typed as --token-name ends with this one sentence.
+const REVOKE = "If what you typed as --token-name was the token itself, it is now in your shell history (and in any chat or log it was typed into): revoke it and create a new one.";
+
+const EXIT4 = "When online, run " + CMD + " sync, then " + CMD + " list: if the change is there, run " + CMD + " deploy to finish; if it is not, run the same command again.";
+
+const USAGE = `usage: ${CMD} <command> [args]
+
+  open <name>                                    open a page's private link in the default browser
+  publish <file.html | folder> [--name <name>] [--live]
+                                                 publish or update a page (new pages are private);
+                                                 updating a SHARED page needs --live (it goes public at once).
+                                                 ${core.askLive("<name>", "<link>")}
+  share <name> [note]                            put a page on the public link site, record the share (needs a host)
+  unshare <name> [--version N]                   take a page (or one old version) off the link site
+  rename <old> <new>                             change a page's name only; its links, versions and visibility stay as they are
+  list [--json] [--live]                         every page with its links; --live reads the link site now
+  check [--sources]                              verify the store and read the link site; --sources lists sources not on this machine
+  regenerate                                     rebuild the generated pages (history pages, master index)
+  deploy                                         make the link site show the store's remote, confirmed by reading it back
+  sync                                           fast-forward this machine's copy of the store from its remote
+  recover [--set-aside]                          after an interrupted command: say whether it was saved, remove its temporary copy;
+                                                 --set-aside (only when the owner asks): keep every uncommitted change under a named git ref, then clear them
+  import <old-site-dir> <old-manifest.json> --source-root <dir>   one-time migration into an empty store
+  init [<path>]                                  create a new store (default ~/.forge); private pages work at once
+  host <kind> --project <p> [--account <id>] --url <https://...> [--token-name <NAME>] [--replace]
+                                                 set the link site's host (cloudflare-pages, vercel or netlify), so pages can be shared
+  --version                                      print Forge <version> (the command may be installed as forgee)
+  store [<path>]                                 say which store forge uses and why; with a path, use that store from now on
+  update [--check]                               update this copy of Forge (a git checkout) to the latest release;
+                                                 --check only says whether a newer release exists. Needs no store.
+
+The store is FORGE_WORKSPACE, else the store named in ~/.config/forge/settings.json, else ~/.forge.
+FORGE_DEPLOY=0 makes deploys a dry run.
+Exit codes of the commands that write the store: 0 finished; 1 refused, nothing changed; 3 saved,
+but the link site not confirmed or a later step failed (results still printed; do the step stderr
+names after finish with:); 4 not known whether the change was saved. ${EXIT4}
+75 the store was busy, nothing changed.
+update has its own exit codes (docs/reference.md): its exit 1 can come after this copy of Forge moved.`;
+
+const PATHS = ["manifest.json", "public", "private"];
+const LOCKED = new Set(["publish", "share", "unshare", "rename", "regenerate", "import", "deploy", "sync", "recover", "host"]);
+const NOT_FINISHED = 3;
+const NOT_KNOWN = 4;
+
+// Every refusal is thrown, never exited on the spot, so the temporary
+// worktree is always removed on the way out (process.exit skips finally).
+class ForgeExit extends Error {
+  constructor(msg, code) { super(msg); this.code = code; }
+}
+function die(msg, code = 1) {
+  throw new ForgeExit(msg, code);
+}
+const short = (rev) => (rev || "").slice(0, 12);
+const indent = (s) => s.split("\n").map((l) => "  " + l).join("\n");
+
+// This machine's copy of the store, set once in main: a private link with no
+// privateBaseUrl is a file in it (never in a temporary worktree).
+let storeRoot = null;
+
+// The private link: at the private address when config.json names one, else the
+// page's file in this machine's copy (public/ for a shared page).
+function privateUrl(config, slug, visibility) {
+  if (config.privateBaseUrl) return config.privateBaseUrl + "/d/" + slug + "/";
+  return pathToFileURL(path.join(storeRoot, visibility === "shared" ? "public" : "private", "d", slug, "index.html")).href;
+}
+
+// config.json as it is at a commit, checked by the loader's rules. Every
+// decision about the link site (is there a host, where is it) and every
+// result line is taken from the commit it concerns, never from this machine's
+// copy, which another machine may have moved on from.
+function configAt(root, rev) {
+  return workspace.parseConfig(git.must(root, ["show", rev + ":config.json"], "reading config.json at commit " + short(rev)), "commit " + short(rev));
+}
+
+function urls(config, d) {
+  return {
+    priv: privateUrl(config, d.slug, d.visibility),
+    pub: config.baseUrl ? config.baseUrl + "/d/" + d.slug + "/" : null,
+  };
+}
+
+// Test hook: hold a write command open after it has read the store, so a test
+// can start a second command against the same store while the first is busy.
+function testDelay() {
+  const ms = Number(process.env.FORGE_TEST_DELAY_MS || 0);
+  if (ms > 0) sleep(ms);
+}
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const ASIDE_SECTION = "See " + path.join(ENGINE, "docs", "reference.md") + ', section "Setting changes aside (only when the owner asks)".';
+const CLEARING = "When the owner asks to clear them, offer: " + CMD + " recover --set-aside (it keeps every version under a named git ref, then clears this copy). " + ASIDE_SECTION;
+function halfUpdatedMessage(root) {
+  return "a forge command was stopped while updating this machine's copy of the store. Your pages are safe on the store's remote at commit " +
+    short(git.knownRemoteHead(root)) + ". This copy is half-updated; forge will not repair it by guessing. Nothing was changed. Tell the owner. " +
+    "When the owner asks to clear it, offer: " + CMD + " recover --set-aside (it keeps every changed file under a named git ref and moves a leftover git lock aside), then " + CMD + " sync. " + ASIDE_SECTION;
+}
+
+// forge never edits this machine's copy of the store except by fast-forward, so
+// any uncommitted change in it was made by hand, or by a fast-forward that was
+// stopped half way (told apart, and worded as such). Refused and listed,
+// never discarded. So are commits here that the remote lacks.
+const NO_TOKEN_IN_CONFIG = "config.json holds the token's name, never the token: if this change put a token in it, edit it back, revoke the token, and set the host with " + CMD + " host instead of committing.";
+function refuseHandEdits(root) {
+  if (git.halfUpdated(root)) die("refusing: " + halfUpdatedMessage(root) + "\n" + git.STOP);
+  const edits = git.dirty(root);
+  if (edits) {
+    // config.json is the one file a person edits by hand on purpose (the store's look, say).
+    const lines = edits.split("\n");
+    const config = lines.some((l) => /(^|\s)config\.json$/.test(l));
+    const commit = "  git -C " + shq(root) + " commit -m \"store setting\" config.json" + (git.hasRemote(root) ? " && git -C " + shq(root) + " push" : "");
+    const refusing = "refusing: this machine's copy of the store has changes no forge command made, so nothing was changed:\n" + indent(edits) + "\n";
+    // Only config.json: the commit is the way on, so no "do not run git" before it.
+    if (config && lines.length === 1) {
+      die(refusing + "if you changed config.json on purpose, commit it with this line, then run the same command again:\n" + commit + "\n" + NO_TOKEN_IN_CONFIG + "\n" +
+        "If not, tell the owner: forge never discards hand edits. " + CLEARING);
+    }
+    die(
+      refusing + "forge never edits this machine's copy of the store by hand and never discards hand edits; tell the owner. " + CLEARING + " " + git.STOP +
+      (config ? "\nThe one exception: if you changed config.json on purpose, commit it with this line (the other changes above still need the owner):\n" + commit + "\n" + NO_TOKEN_IN_CONFIG : ""),
+    );
+  }
+  // Commits made here by hand (a config.json change, say) and not pushed:
+  // forge only fast-forwards this copy to the remote, so every later write
+  // would end stuck behind them. Refused before anything is written.
+  const ahead = git.aheadOfRemote(root);
+  if (ahead) {
+    die("refusing: this machine's copy of the store has " + ahead + " commit(s) its remote lacks (made outside forge, for example a config.json change), so nothing was changed. " +
+      "forge only ever brings this copy level with the remote, so every write would stay stuck behind them. Push them first, then run the same command again:\n  git -C " + shq(root) + " push\n" +
+      "If git refuses the push because the remote has moved on, put them on top of it first, then push:\n  git -C " + shq(root) + " pull --rebase");
+  }
+}
+
+// What this machine last read from the link site's marker, kept inside .git
+// (per machine, never pushed). Statements about the link site come only from a
+// live read: this record is reported as such, with its time.
+function recordFile(root) {
+  return path.join(root, ".git", "forge-linksite.json");
+}
+// want is the { tree, site } pair the read was compared with.
+function remember(root, live, want) {
+  fs.writeFileSync(recordFile(root), JSON.stringify({ readAt: new Date().toISOString(), liveCommit: live.commit, liveTree: live.tree, liveSite: live.site, storeTreeAtRead: want.tree, storeSiteAtRead: want.site }) + "\n");
+}
+// A marker that was read but belongs to another host setting (or records
+// none): what that means and the way on. behind (a read against this copy's
+// setting, not the remote's): the likely cause is a host another machine set,
+// which a --replace from here would undo, so syncing is said before the rest.
+function otherSite(live, config, behind) {
+  if (!live.site) return "the address answers with a marker an older forge uploaded, which records no host setting, so it cannot be matched to this store's; run: " + CMD + " deploy";
+  return "the address answers with a site uploaded for another host setting" + (behind ? ". " + MAYBE_BEHIND + "Otherwise: " : ": ") + "wrong address, or it does not point at project " + config.host.project + " yet (" +
+    CMD + " host with the right values and --replace fixes the setting; " + CMD + " deploy uploads to it)";
+}
+const MAYBE_BEHIND = "If another machine changed the host, this copy may be behind: run " + CMD + " sync, then check again. ";
+function siteState(ws, fresh) {
+  const root = ws.root;
+  const storeCommit = git.head(root);
+  const storeTree = git.publicTree(root, "HEAD");
+  const none = { readAt: null, liveCommit: null, liveTree: null, storeCommit, storeTree, error: null };
+  if (!ws.config.host) return { state: "none", basis: "no host is set", ...none };
+  const want = { tree: storeTree, site: siteOf(ws.config) };
+  if (fresh) {
+    const live = readLive(ws, 5000);
+    if (!live.ok) return { state: "unknown", basis: "live read now", ...none, error: live.error };
+    remember(root, live, want);
+    // Behind only on the same site: another site's marker says nothing about this one.
+    const state = sameDeploy(live, want) ? "current" : sameSite(live, want) ? "behind" : "unknown";
+    return { state, basis: "live read now", ...none, readAt: new Date().toISOString(), liveCommit: live.commit, liveTree: live.tree, error: state === "unknown" ? otherSite(live, ws.config, true) : null };
+  }
+  let rec = null;
+  try {
+    rec = JSON.parse(fs.readFileSync(recordFile(root), "utf8"));
+  } catch { /* never read on this machine */ }
+  if (!rec) return { state: "unknown", basis: "no live read on this machine", ...none };
+  // Behind only when a live read made against this same store state and site
+  // showed an older state of that site; a read made against another state or
+  // site, or a record without sites, says nothing now.
+  const last = { tree: rec.liveTree, site: rec.liveSite };
+  const state = sameDeploy(last, want) ? "current" : sameDeploy({ tree: rec.storeTreeAtRead, site: rec.storeSiteAtRead }, want) && sameSite(last, want) ? "behind" : "unknown";
+  return { state, basis: "last live read on this machine", ...none, readAt: rec.readAt, liveCommit: rec.liveCommit, liveTree: rec.liveTree };
+}
+function siteLine(s) {
+  if (s.state === "none") return "link site: none (no host is set; private pages need none; to share pages, set one: " + CMD + " host, see SETUP.md)";
+  const when = s.readAt ? " (" + s.basis + ", " + s.readAt.replace("T", " ").replace(/(\.\d+)?Z$/, "") + " UTC)" : " (" + s.basis + ")";
+  if (s.state === "current") return "link site: current, shows commit " + short(s.liveCommit) + when;
+  if (s.state === "behind") return "link site: BEHIND: it shows commit " + short(s.liveCommit) + ", this copy of the store is at " + short(s.storeCommit) + when + "; run: " + CMD + " deploy";
+  // A marker was read, from another host setting: the error names the way on.
+  if (s.error && s.liveTree) return "link site: not known: " + s.error;
+  return "link site: not known" + (s.error ? ", could not read it: " + s.error : when) + "; run: " + CMD + " list --live";
+}
+
+// Make the link site serve the public/ of the store's remote head (this
+// copy's head when there is no remote), and confirm it by reading the marker
+// back. Uploads only when the live marker differs or is missing; a command
+// that changed nothing public (opts.changed false) does not start an upload
+// on a marker it could not read at all. Deploys an export of the commit (a
+// temporary worktree), never this machine's working folder, with
+// /_forge/revision.json and a no-store header rule added to the export only.
+// If the remote moves meanwhile, it deploys the newer state (at most 3 times).
+// Returns { site: "yes" | "no" | "unknown", commit, uploaded, sent (the
+// commit uploaded last), dry, why, checkFailed }; a failure inside is returned
+// as site "unknown", never thrown. site is "yes" only when, in one pass, the store's remote and
+// the live marker were both read and agree.
+function ensureLive(root, opts = {}) {
+  const dry = process.env.FORGE_DEPLOY === "0";
+  let uploaded = false;
+  let sentCommit = null; // the commit this deploy uploaded last
+  let seen = null; // the last remote head read: what a failed run reports on
+  const out = (r) => ({ uploaded, sent: sentCommit, seen, ...r });
+  const seconds = Number(process.env.FORGE_READBACK_SECONDS || 60);
+  for (let round = 1; round <= 3; round++) {
+    try {
+      let target;
+      try {
+        target = git.base(root);
+        seen = target;
+      } catch (e) {
+        return out({ site: "unknown", uploaded, why: e.kind === "unreachable" ? "the store's remote could not be reached, so forge could not tell what the link site should show" : e.message });
+      }
+      const tree = git.publicTree(root, target);
+      // The host and address of the commit being deployed, read every round:
+      // another machine may have set or changed them.
+      const ws = { config: configAt(root, target) };
+      // A private-only store has no link site: nothing to upload or read.
+      if (!ws.config.host) return out({ site: "yes", noHost: true, commit: target });
+      const want = { tree, site: siteOf(ws.config) };
+      if (dry && !opts.changed && !opts.force) return out({ site: "yes", dry: true, commit: target });
+      if (!dry) {
+        const live = readLive(ws);
+        // opts.prove (forge host): a site already level proves nothing about
+        // the project and token just set, so only this run's own upload counts.
+        // No per-run nonce: another machine's deploy of the same state would
+        // overwrite it. The host's tool exiting 0 for that project with that
+        // token proves those two; the read-back of the pair proves the address.
+        if (live.ok && sameDeploy(live, want) && !(opts.prove && !uploaded)) {
+          remember(root, live, want);
+          return out({ site: "yes", commit: target, uploaded });
+        }
+        if (!live.ok && !live.missing && !opts.changed && !opts.force) {
+          return out({ site: "unknown", uploaded, why: "its marker could not be read (" + live.error + "), so nothing was uploaded" });
+        }
+      }
+      const wt = git.addWorktree(root, target);
+      let sent;
+      try {
+        const wws = workspace.load(wt);
+        const bad = core.check(wws);
+        if (bad.length) return out({ site: "unknown", uploaded, checkFailed: true, why: "the store at commit " + short(target) + " fails the check, so it was not deployed:\n" + indent(bad.join("\n")) });
+        const pub = path.join(wt, "public");
+        if (dry) {
+          console.error("deploy dry run (FORGE_DEPLOY=0): would upload " + core.listFiles(pub).length + " files of commit " + short(target) + " to project " + wws.config.host.project + "; nothing uploaded");
+          return out({ site: "yes", dry: true, commit: target });
+        }
+        fs.mkdirSync(path.join(pub, path.dirname(MARKER)), { recursive: true });
+        // The marker and the host's no-store rule (upload adds it) go into this export only.
+        fs.writeFileSync(path.join(pub, MARKER), JSON.stringify({ commit: target, tree, site: want.site, time: new Date().toISOString() }) + "\n");
+        sent = upload(wws, pub);
+      } finally {
+        git.removeWorktree(root, wt);
+      }
+      if (!sent) return out({ site: "unknown", uploaded, why: "the upload failed" });
+      uploaded = true;
+      sentCommit = target;
+      core.testPause("deployed");
+      const until = Date.now() + seconds * 1000;
+      let moved = false;
+      let last = null;
+      for (;;) {
+        last = readLive(ws);
+        if (last.ok) {
+          // Confirmed only against the remote's head read now: a marker that
+          // matches what was uploaded says nothing if the remote has moved on.
+          let now;
+          try {
+            now = git.base(root);
+            seen = now;
+          } catch {
+            return out({ site: "unknown", uploaded, why: "uploaded, but the store's remote could not be read to confirm the link site shows its latest state" });
+          }
+          // The pair the remote's head asks for: its tree and its host setting.
+          const nowWant = { tree: git.publicTree(root, now), site: siteOf(configAt(root, now)) };
+          if (sameDeploy(last, nowWant)) {
+            remember(root, last, nowWant);
+            return out({ site: "yes", commit: now, uploaded });
+          }
+          // A host change with the same tree moves the pair too: restart with the new setting.
+          if (!sameDeploy(nowWant, want)) {
+            console.error("the store's remote moved on during the deploy; deploying its newer state");
+            moved = true;
+            break;
+          }
+        }
+        if (Date.now() >= until) break;
+        sleep(1000);
+      }
+      if (!moved) {
+        return out({ site: last && last.ok ? "no" : "unknown", uploaded, why: last && last.ok && !sameSite(last, want) ? "uploaded, not confirmed live: " + otherSite(last, ws.config)
+          : "uploaded, not confirmed live; run: " + CMD + " deploy" + (last && !last.ok ? " (reading it back: " + last.error + ")" : " (it still shows another state)") });
+      }
+    } catch (e) {
+      // A failure after an upload must not read as "nothing was deployed".
+      return out({ site: "unknown", why: e.message });
+    }
+  }
+  return out({ site: "unknown", uploaded, why: "the store kept changing during 3 deploys, so the link site may show an older state; run: " + CMD + " deploy" });
+}
+
+// share and unshare need a host in the store they change (the worktree at
+// the remote's head, so a host another machine set counts); deploy, in the
+// commit it would deploy. needHost returns ws for the command to go on with.
+function needHost(ws, cmd) {
+  if (!ws.config.host) noHost(cmd);
+  return ws;
+}
+function noHost(cmd) {
+  die("refusing: this store has no host yet, so there is no link site to " + (cmd === "deploy" ? "deploy to" : cmd + " on") + "; nothing was changed. Private pages need none.\n" +
+    "To share pages, set the host first: " + CMD + " host <cloudflare-pages|vercel|netlify> --project <p> [--account <id>] --url <https://...> --token-name <NAME>\n" +
+    "SETUP.md step 5 says how to create the host's project and token.");
+}
+
+// The safety rules every write follows (the lock is already held): refuse hand
+// edits in this machine's copy; start from the remote's head in a temporary
+// worktree; make the change, run the full check and commit there; push (the
+// commit point). A push refused because the remote moved is retried from the
+// new head, at most 3 times. A retry stops instead when the command's premise
+// is gone: its name now belongs to a different page (another machine renamed
+// the page and gave the name to another), or its page changed visibility
+// (another machine shared or took it down meanwhile). Returns the transaction with
+// saved "yes" or "unknown"; "no" is a refusal (exit 1) thrown before this
+// returns. Everything after the push is the caller's (finish).
+//
+// afterPush is set at the push attempt (saved "unknown", then "yes" once the
+// remote has the change; cleared when a read of the remote shows it was not
+// taken): the top handler reads it, so an exception that escapes after that
+// line exits 3 or 4, never 1.
+let afterPush = null;
+// A page is its slug; its name can change. The page a change acted on: its
+// slug, or null for a page the change made new (and for regenerate and
+// import, which act on no one page).
+const pageOf = (r) => (r && r.before !== null && r.slug !== undefined ? r.slug : null);
+// The page in a manifest by its slug, with the name it has there.
+function bySlug(m, slug) {
+  const e = Object.entries(m.deliverables).find(([, x]) => x.slug === slug);
+  if (!e) throw new Error("the page this command changed (" + slug + ") is not in the store's final state; " + CMD + " list shows every page");
+  return { name: e[0], d: e[1] };
+}
+const renamedNote = (was, now) => (was === now ? [] : ["note: another machine has since renamed " + was + " to " + now + "; " + CMD + " list shows every name"]);
+// The page's visibility comes from the manifest the change just wrote (found
+// by slug, so a rename is found too), not from the command's own result.
+function privLink(ws, r) {
+  if (!r || !r.slug) return null;
+  const d = Object.values(ws.manifest.deliverables).find((x) => x.slug === r.slug);
+  return privateUrl(ws.config, r.slug, d ? d.visibility : "private");
+}
+function transaction(root, change, message, paths = PATHS) {
+  refuseHandEdits(root);
+  const remote = git.hasRemote(root);
+  let first = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let base;
+    try {
+      base = git.base(root);
+    } catch (e) {
+      die(e.message);
+    }
+    const wt = git.addWorktree(root, base);
+    try {
+      const ws = workspace.load(wt);
+      testDelay();
+      core.testPause("before");
+      const result = change(ws);
+      if (first && pageOf(first) !== pageOf(result)) {
+        die(
+          "refusing: another machine gave the name " + first.name + " to a different page while this command ran (a rename, then a publish under that name), " +
+          "so this command changed nothing. " + CMD + " list shows every name; if it should still happen, run the same command again.",
+        );
+      }
+      if (first && first.name === result.name && first.before !== result.before) {
+        die(
+          "refusing: another machine changed " + result.name + " while this command ran (it was " + (first.before || "not published") +
+          ", it is " + (result.before || "not published") + " now), so this command changed nothing. If it should still happen, run the same command again.",
+        );
+      }
+      const problems = core.check(workspace.load(wt));
+      if (problems.length) die("refused: the change failed the store check, so nothing was changed:\n" + indent(problems.join("\n")));
+      const rev = git.dirty(wt) ? git.commit(wt, paths, message(result), core.testPause) : null;
+      const changed = rev ? git.changedInCommit(wt, rev, ["public"]) : false;
+      core.testPause("after-commit");
+      const t = { priv: privLink(ws, result), result, rev, base, remote, changed, message: message(result), saved: "yes", ff: null, later: null, why: null };
+      if (rev && remote) {
+        afterPush = { saved: "unknown", message: message(result), priv: privLink(ws, result) };
+        const p = git.pushRev(root, rev);
+        if (!p.ok && p.kind !== "unknown") afterPush = null;
+        else if (p.ok) afterPush.saved = "yes";
+        if (!p.ok && p.kind === "moved") {
+          first = first || result;
+          console.error("the store's remote moved on while this command ran; making the change again from its new state");
+          continue;
+        }
+        // Read from the remote: it does not have the change.
+        if (!p.ok && p.kind === "refused") die("refusing: the store's remote refused the change, so nothing changed:\n" + p.err + "\n" + git.STOP);
+        if (!p.ok) return { ...t, saved: "unknown", why: p.err };
+        if (p.lostAnswer) console.error("the push got no answer, but the store's remote has the change: it is saved");
+      }
+      if (!remote) {
+        // With no remote, this fast-forward is the commit point: if it fails,
+        // the commit exists nowhere the store will keep, so nothing happened.
+        t.ff = git.fastForward(root, rev || base);
+        if (!t.ff.ok) die("refusing: this machine's copy of the store could not take the change, so nothing was changed: " + t.ff.why + "\n" + git.STOP);
+        if (rev) afterPush = { saved: "yes", message: message(result), priv: privLink(ws, result) };
+      }
+      // The change is saved: from here on nothing may say that nothing changed.
+      try {
+        core.testPause("pushed");
+      } catch (e) {
+        t.later = e.message;
+      }
+      return t;
+    } finally {
+      git.removeWorktree(root, wt);
+      core.testPause("cleanup");
+    }
+  }
+  die("refusing: the store's remote kept moving during 3 tries, so this command changed nothing; run the same command again");
+}
+
+// After the push: catch this copy up, bring the link site level, and build the
+// result lines from the manifest at the final commit. Every failure here is
+// caught and recorded (the change is already saved), then report() prints.
+// build(manifest, siteConfirmed, config) returns { lines, priv, pending, next }: priv is the
+// page's private link; pending says what the owner would see while the link
+// site is not confirmed; next, when given, replaces "forge deploy" after
+// "finish with:" in that case (forge host: a deploy cannot fix a wrong project).
+function finish(root, t, build, opts = {}) {
+  const o = { site: "unknown", why: null, checkFailed: false, local: t.ff ? (t.ff.ok ? "yes" : "no") : "unknown", ffWhy: t.ff && !t.ff.ok ? t.ff.why : null, later: t.later };
+  let r = null;
+  if (t.saved === "yes") {
+    try {
+      if (t.remote) {
+        core.testPause("fast-forward");
+        const ff = git.fastForward(root, t.rev || t.base);
+        o.local = ff.ok ? "yes" : "no";
+        o.ffWhy = ff.ok ? null : ff.why;
+      }
+      if (afterPush) afterPush.local = o.local; // for the top handler, should a later step throw
+      // opts.force: deploy even when nothing under public/ changed; opts.prove
+      // (forge host): upload even to a site already level, which proves it.
+      const live = ensureLive(root, { changed: t.changed, force: opts.force, prove: opts.prove });
+      // A dry run (FORGE_DEPLOY=0) uploads and reads nothing: no line may say
+      // what the link site shows, so the builders get siteOk false.
+      Object.assign(o, { site: live.site, why: live.why || null, checkFailed: !!live.checkFailed, dry: !!live.dry });
+      // A failed deploy names no commit: the remote head it last read is
+      // still what the store now selects (another machine's host, say).
+      const at = live.commit || live.seen || t.rev || t.base;
+      // This copy catches up (fast-forward only) only onto a commit the link
+      // site confirmed: a head a failed deploy last read may be one the store
+      // check rejected, and this copy keeps its good state.
+      if (o.local === "yes" && live.commit) {
+        const ff = git.fastForward(root, live.commit);
+        if (!ff.ok) Object.assign(o, { local: "no", ffWhy: ff.why });
+      }
+      // The lines are built at `at`, which may be newer than this copy: its
+      // private link "works" only when this copy holds that commit.
+      if (o.local === "yes" && git.head(root) !== at) o.notAt = true;
+      core.testPause("lines");
+      r = build(JSON.parse(git.must(root, ["show", at + ":manifest.json"], "reading the manifest at commit " + short(at))), o.site === "yes" && !o.dry, configAt(root, at));
+    } catch (e) {
+      o.later = (o.later ? o.later + "; " : "") + e.message;
+    }
+  }
+  report(t, o, r);
+}
+
+// The one place a write command's result is printed and its exit code chosen,
+// from the outcome record alone.
+function report(t, o, r) {
+  if (t.saved === "unknown") {
+    die([
+      "NOT KNOWN whether the change was saved: " + t.message,
+      "  the push got no answer, and the store's remote could not be read afterwards:",
+      indent(indent(t.why || "")),
+      EXIT4,
+    ].join("\n"), NOT_KNOWN);
+  }
+  const priv = r && r.priv !== undefined ? r.priv : t.priv;
+  for (const l of r ? r.lines : priv ? ["private: " + priv] : []) console.log(l);
+  if (o.dry) console.log("dry run (FORGE_DEPLOY=0): nothing was uploaded and the link site was not read");
+  if (o.local === "no") {
+    console.error("note: the change is saved" + (t.remote ? " and pushed" : "") + ", but this machine's copy of the store could not catch up: " + o.ffWhy +
+      "\nNothing is lost; the page is not in this machine's copy until it catches up. forge never edits this machine's copy by hand; tell the owner.");
+  }
+  const siteOk = o.site === "yes";
+  if (siteOk && !o.later) return;
+  const saved = t.rev ? "saved" + (t.remote ? " and pushed" : "") + ", commit " + short(t.rev) : "nothing new to save: the store already had it";
+  die([
+    "NOT FINISHED: " + (o.later ? "a step after saving failed" : "updating the link site"),
+    "  done: " + t.message + " (" + saved + ")",
+    // A private address serves this machine's copy: "works" only once it caught up.
+    ...(priv ? [o.local === "yes" && !o.notAt ? "  saved; its private link works: " + priv : "  saved; not in this machine's copy of the store until it catches up: " + priv] : []),
+    ...(o.later ? ["  a later step failed: " + o.later] : []),
+    ...(siteOk ? [] : ["  separately, the link site is not confirmed: " + (o.why || "it was not checked").split("\n").join("\n  ")]),
+    ...(r && r.pending && !siteOk ? ["  " + r.pending] : []),
+    o.checkFailed ? git.STOP : "finish with: " + (r && r.next && !siteOk ? r.next : CMD + " deploy"),
+  ].join("\n"), NOT_FINISHED);
+}
+
+// When another machine published a newer version meanwhile (from the final
+// manifest), say what the stable link shows now.
+function superseded(d, n) {
+  const latest = d.versions[d.versions.length - 1].n;
+  return latest !== n ? ["note: another machine has since published v" + latest + "; the stable link shows v" + latest] : [];
+}
+
+function cmdPublish(root, args) {
+  let name;
+  let live = false;
+  const files = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--name") {
+      name = args[++i];
+      if (name === undefined) die("--name needs a value");
+    } else if (args[i] === "--live") live = true;
+    else files.push(args[i]);
+  }
+  if (files.length !== 1) die("usage: " + CMD + " publish <file.html | folder> [--name <name>] [--live]");
+  const t = transaction(root, (ws) => core.publish(ws, files[0], { name, live }), (r) => "publish: " + r.name + " v" + r.version + " (" + r.visibility + ")");
+  const r = t.result;
+  finish(root, t, (m, siteOk, config) => {
+    const { name, d } = bySlug(m, r.slug);
+    const u = urls(config, d);
+    const lines = [r.unchanged
+      ? "unchanged " + r.name + " is already at v" + r.version + " (" + d.visibility + "), nothing published"
+      : "published " + r.name + " v" + r.version + " (" + d.visibility + ")"];
+    lines.push(...renamedNote(r.name, name));
+    if (d.visibility !== r.visibility) lines.push("note: another machine has since made " + name + " " + d.visibility);
+    lines.push(...superseded(d, r.version));
+    lines.push("private: " + u.priv);
+    // From the config of the commit reported: with no host, share would refuse.
+    if (d.visibility !== "shared") lines.push(config.host ? "share it with: " + CMD + " share " + name : "to share it: set a host first with " + CMD + " host (SETUP.md step 5), then run " + CMD + " share " + name);
+    else if (siteOk) lines.push("public: " + u.pub);
+    if (r.sourceChanged) lines.push("source: " + r.name + " followed " + r.sourceChanged.from + " until now; it now follows " + r.sourceChanged.to);
+    // Worked out before the commit (core.publish), never by reading the source again.
+    lines.push(...r.warnings);
+    return { lines, priv: u.priv, pending: d.visibility === "shared" && !r.unchanged ? "the public link " + u.pub + " still shows the previous version until " + CMD + " deploy succeeds" : null };
+  });
+}
+
+function cmdShare(root, args) {
+  const [name, ...note] = args;
+  if (!name) die("usage: " + CMD + " share <name> [note]");
+  const t = transaction(root, (ws) => core.share(needHost(ws, "share"), name, note.join(" ")), (r) => "share: " + r.name + " (latest v" + r.latestAtShare + ")");
+  const r = t.result;
+  finish(root, t, (m, siteOk, config) => {
+    const { name: now, d } = bySlug(m, r.slug);
+    const u = urls(config, d);
+    if (d.visibility !== "shared") {
+      return { lines: ["shared " + name + ", but another machine has since taken it down: " + now + " is private now, so there is no public link", ...renamedNote(name, now), "private: " + u.priv], priv: u.priv };
+    }
+    return {
+      lines: [
+        r.wasPrivate ? "shared " + name + " (latest v" + r.latestAtShare + ")" : "recorded: " + name + " shared again, latest at share was v" + r.latestAtShare,
+        ...renamedNote(name, now),
+        ...superseded(d, r.latestAtShare),
+        "private: " + u.priv,
+        ...(siteOk ? ["public: " + u.pub] : []),
+      ],
+      priv: u.priv,
+      pending: r.wasPrivate ? "the public link " + u.pub + " is not confirmed to work yet" : null,
+    };
+  });
+}
+
+function cmdUnshare(root, args) {
+  let name;
+  let version = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--version") {
+      version = args[++i];
+      if (!/^\d+$/.test(version || "")) die("--version needs a version number");
+    } else if (!name) name = args[i];
+    else die("usage: " + CMD + " unshare <name> [--version N]");
+  }
+  if (!name) die("usage: " + CMD + " unshare <name> [--version N]");
+  const t = transaction(root, (ws) => core.unshare(needHost(ws, "unshare"), name, { version }),
+    (r) => "unshare: " + r.name + (r.version ? " v" + r.version : " (whole document)") + (r.already ? ", already off the link site" : ""));
+  const r = t.result;
+  let raced = null; // the take-down asked for is not what holds at the end
+  finish(root, t, (m, siteOk, config) => {
+    const { name: now, d } = bySlug(m, r.slug);
+    const renamed = renamedNote(name, now);
+    const u = urls(config, d);
+    const link = version ? u.pub + "v" + version + "/" : u.pub;
+    // From the final entry, whatever the command found at its start (r.already).
+    const fv = version ? d.versions.find((x) => x.n === Number(version)) : null;
+    if (d.visibility === "shared" && (!version || (fv && !fv.takenDown))) {
+      raced = (version ? now + " v" + version : now) + " is public: another machine has since shared it; if the owner still wants it down, run: " + CMD + " unshare " + now + (version ? " --version " + version : "");
+      return { lines: [raced, ...renamed, "private: " + u.priv, ...(siteOk ? ["public: " + u.pub] : [])], priv: u.priv };
+    }
+    // A version marked on a page that is not shared: nothing public changed.
+    if (version && d.visibility !== "shared") {
+      return { lines: [(r.already ? now + " v" + version + " already stays" : "v" + version + " will stay") + " off the link site when " + now + " is shared", ...renamed, "private: " + u.priv], priv: u.priv };
+    }
+    if (r.already) {
+      return {
+        lines: [(version ? name + " v" + version + " was already taken down" : name + " was already private") + (siteOk ? "; the link site is confirmed not to serve it" : ""), ...renamed, "private: " + u.priv],
+        priv: u.priv,
+        pending: "the public link " + link + " may STILL WORK until " + CMD + " deploy succeeds",
+      };
+    }
+    return {
+      lines: [
+        (version ? "taken down: " + name + " v" + version : "taken down: " + name + " (whole document)") + (siteOk ? "; " + link + " now returns not found" : ""),
+        ...renamed,
+        "private: " + u.priv,
+      ],
+      priv: u.priv,
+      pending: "the public link " + link + " STILL WORKS until " + CMD + " deploy succeeds",
+    };
+  });
+  if (raced) die("NOT FINISHED: " + raced, NOT_FINISHED);
+}
+
+// Only the name changes, so the links in the result are the same as before.
+// A public line follows the share rules: only when the link site is confirmed.
+function cmdRename(root, args) {
+  if (args.length !== 2) die("usage: " + CMD + " rename <old> <new>");
+  const [from, to] = args;
+  const t = transaction(root, (ws) => core.rename(ws, from, to), (r) => "rename: " + r.name + " to " + r.to);
+  finish(root, t, (m, siteOk, config) => {
+    const { name: now, d } = bySlug(m, t.result.slug);
+    const u = urls(config, d);
+    return {
+      lines: [
+        "renamed " + from + " to " + to, ...renamedNote(to, now), "private: " + u.priv, ...(d.visibility === "shared" && siteOk ? ["public: " + u.pub] : []),
+        "note: notes or scripts that name " + from + " must be updated by hand; forge now knows this page only as " + now,
+      ],
+      priv: u.priv,
+    };
+  });
+}
+
+function cmdRegenerate(root) {
+  const t = transaction(root, (ws) => core.regenerate(ws), () => "regenerate: history pages and master index");
+  finish(root, t, () => ({ lines: [t.rev
+    ? "regenerated " + t.result.length + " page(s) and committed the ones that changed"
+    : "regenerated " + t.result.length + " page(s); all already current, nothing to commit"] }));
+}
+
+function cmdImport(root, args) {
+  const pos = [];
+  let sourceRoot;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--source-root") sourceRoot = args[++i];
+    else pos.push(args[i]);
+  }
+  if (pos.length !== 2 || !sourceRoot) die("usage: " + CMD + " import <old-site-dir> <old-manifest.json> --source-root <dir>");
+  const [site, man] = pos.map((p) => path.resolve(p));
+  const t = transaction(root, (ws) => core.importSite(ws, site, man, sourceRoot), (r) => "import: " + r.documents + " documents, " + r.versions + " versions, " + r.files + " files");
+  finish(root, t, () => ({ lines: ["imported " + t.result.documents + " documents, " + t.result.versions + " versions, " + t.result.files + " files; public/ is byte-identical to " + site] }));
+}
+
+// Deploy the remote's committed state (never this machine's working folder),
+// checked first, and confirm it live. Needs no clean copy here: it does not
+// read or change this machine's copy of the store.
+function cmdDeploy(root) {
+  const live = ensureLive(root, { force: true });
+  if (live.noHost) noHost("deploy");
+  if (live.uploaded && live.site !== "yes") {
+    die("NOT FINISHED: " + CMD + " deploy uploaded commit " + short(live.sent) + " to the link site, but the link site is not confirmed to show the store's remote: " + live.why +
+      "\n" + (live.checkFailed ? git.STOP : "finish with: " + CMD + " deploy"), NOT_FINISHED);
+  }
+  if (live.checkFailed) die("refusing to deploy: " + live.why + "\nNothing was deployed. " + git.STOP);
+  if (live.site !== "yes") die("NOT FINISHED: the link site is not confirmed to show the store's remote: " + live.why + "\nfinish with: " + CMD + " deploy", NOT_FINISHED);
+  console.log(live.dry
+    ? "dry run, nothing uploaded: the link site would show the store at commit " + short(live.commit)
+    : live.uploaded
+      ? "deployed: the link site shows the store at commit " + short(live.commit) + " (read back live)"
+      : "the link site already shows the store at commit " + short(live.commit) + " (read back live); nothing uploaded");
+}
+
+function cmdSync(root) {
+  if (!git.hasRemote(root)) return console.log("the store has no remote; nothing to sync");
+  refuseHandEdits(root);
+  let base;
+  try {
+    base = git.base(root);
+  } catch (e) {
+    die(e.message);
+  }
+  const ff = git.fastForward(root, base);
+  if (!ff.ok) die("this machine's copy of the store could not catch up with its remote: " + ff.why + "\nNothing was changed. " + git.STOP);
+  const bad = core.check(workspace.load(root));
+  if (bad.length) die("the store is level with its remote, but it fails the check:\n" + indent(bad.join("\n")) + "\n" + git.STOP);
+  console.log("store in sync with its remote at " + short(git.head(root)));
+}
+
+// After an interrupted command. forge's changes only ever happen in temporary
+// worktrees, so there is nothing to put back. For each one left behind, say
+// what it was (its commit's subject) and whether its change was saved (its
+// commit is on the store's remote: then finish with forge deploy) or not (run
+// the command again), then remove it. A worktree whose commit cannot be
+// checked (the remote is unreachable) is kept, so a later recover can answer.
+// Folders of this store's worktrees that git no longer lists (a cleanup that
+// failed) are removed too. Then report, never touch, a half-updated copy or
+// hand edits; with --set-aside (only when the owner asks) keep every version
+// of them under a named ref instead and clear the copy (git.setAside). Runs
+// without the loader, so a store that no longer loads can still be cleaned up.
+function cmdRecover(root, args) {
+  const aside = args[0] === "--set-aside";
+  if (args.length > (aside ? 1 : 0)) die("usage: " + CMD + " recover [--set-aside]");
+  const left = git.leftoverWorktrees(root);
+  const made = (w) => !w.base || w.head !== w.base;
+  const what = (w) => short(w.head) + ": " + git.git(root, ["log", "-1", "--format=%s", w.head]).out;
+  let remoteHead = null;
+  if (left.some(made)) {
+    try {
+      remoteHead = git.base(root);
+    } catch { /* not known: those worktrees are kept */ }
+  }
+  let kept = 0;
+  for (const w of left) {
+    if (made(w) && !remoteHead) {
+      kept++;
+      console.log("kept a temporary copy of the store from an interrupted forge command (commit " + what(w) + "): the store's remote could not be read to find out whether it was saved; run " + CMD + " recover again when online");
+      continue;
+    }
+    const said = !made(w) ? "nothing was committed in it, so nothing was saved; run the interrupted command again"
+      : w.head && git.contains(root, w.head, remoteHead) ? "the change was saved (commit " + what(w) + "); run " + CMD + " deploy to finish"
+        : "its change (commit " + what(w) + ") was not saved; run the interrupted command again";
+    console.log((git.removeWorktree(root, w.path) ? "removed" : "could not remove") + " a temporary copy of the store from an interrupted forge command: " + said);
+  }
+  git.git(root, ["worktree", "prune"]);
+  const strays = git.strayFolders(root, left.map((w) => w.path));
+  for (const p of strays) {
+    try {
+      fs.rmSync(p, { recursive: true, force: true });
+      console.log("removed a temporary folder an earlier forge command could not remove (it held nothing that was not saved): " + p);
+    } catch (e) {
+      console.log("could not remove a temporary folder an earlier forge command left (it holds nothing that was not saved): " + p + " (" + (e.code || e.message) + ")");
+    }
+  }
+  if (!left.length && !strays.length) console.log("nothing to remove: no interrupted forge command left a temporary copy; if one was interrupted, run it again");
+  if (aside) {
+    const r = git.setAside(root);
+    if (r.refused) die(r.refused + "\n" + git.STOP);
+    if (r.movedLock) console.log("moved git's leftover index lock out of the way; kept at " + r.movedLock);
+    if (r.unpinned) {
+      die("NOT FINISHED: the uncommitted changes were set aside, but naming the record failed: " + r.why +
+        "\n  the hand edits are kept in git's stash list as entry " + r.unpinned + " (not pinned to a name); nothing was lost." +
+        "\n  git's routine cleanup can drop stash entries after about 90 days (gc.reflogExpire), so a developer should pin or apply it before then." +
+        "\n  a developer brings them back with: git stash apply --index " + r.unpinned + "\n" + git.STOP, NOT_FINISHED);
+    }
+    if (r.ref) {
+      console.log("set aside every uncommitted change in this machine's copy of the store (working, staged and untracked versions, and deletions), kept under the git ref " + r.ref +
+        "; a developer brings it back with: git stash apply --index " + r.ref);
+    } else console.log("nothing to set aside: this machine's copy of the store has no uncommitted changes");
+    if (r.left) die("after setting changes aside, this machine's copy still has changes:\n" + indent(r.left) + "\n" + git.STOP);
+    console.log("this machine's copy of the store is clean; next: " + CMD + " sync");
+  } else {
+    if (git.halfUpdated(root)) die(halfUpdatedMessage(root) + "\n" + git.STOP);
+    const edits = git.dirty(root);
+    if (edits) {
+      die("hand edits in this machine's copy of the store, left as they are (forge never discards hand edits; tell the owner):\n" + indent(edits) + "\n" + CLEARING + " " + git.STOP);
+    }
+  }
+  if (kept) die("not known whether " + kept + " interrupted change(s) were saved; run " + CMD + " recover again when online", NOT_KNOWN);
+}
+
+function cmdList(ws, args) {
+  const json = args.includes("--json");
+  const docs = Object.entries(ws.manifest.deliverables).map(([name, d]) => {
+    const latest = d.versions[d.versions.length - 1];
+    const u = urls(ws.config, d);
+    return {
+      name,
+      title: core.titleOf(ws.root, d, name),
+      visibility: d.visibility,
+      slug: d.slug,
+      latest: { n: latest.n, date: latest.date },
+      versions: d.versions.length,
+      takenDown: d.versions.filter((v) => v.takenDown).map((v) => v.n),
+      privateUrl: u.priv,
+      publicUrl: d.visibility === "shared" ? u.pub : null,
+      source: d.source,
+      shares: d.shared.length,
+    };
+  });
+  const index = ws.manifest.indexSlug && ws.config.baseUrl ? ws.config.baseUrl + "/d/" + ws.manifest.indexSlug + "/" : null;
+  const site = siteState(ws, args.includes("--live"));
+  if (json) {
+    console.log(JSON.stringify({ schema: 2, workspace: ws.root, baseUrl: ws.config.baseUrl || null, privateBaseUrl: ws.config.privateBaseUrl || null, index, linkSite: site, documents: docs }, null, 2));
+    return;
+  }
+  if (!docs.length) console.log("nothing published yet");
+  for (const x of docs) {
+    console.log(x.name + "  (" + x.visibility + ")");
+    console.log("  title:   " + x.title);
+    console.log("  latest:  v" + x.latest.n + " (" + x.latest.date + "), " + x.versions + " version(s)" + (x.takenDown.length ? ", taken down: v" + x.takenDown.join(", v") : ""));
+    console.log("  private: " + x.privateUrl);
+    if (x.publicUrl) console.log("  public:  " + x.publicUrl);
+    console.log("  source:  " + x.source);
+  }
+  if (index) console.log("master index: " + index);
+  console.log(siteLine(site));
+}
+
+// Open a page's private link in the default browser (open on macOS,
+// xdg-open elsewhere). The link is printed first, so it can be opened by
+// hand if the browser cannot be started. Waits up to 5 seconds for the
+// opener's answer: exit 1 when it could not start or failed. One still
+// running then (some block until the browser closes) is left to it: exit 0,
+// with a note that it is not known whether a browser opened.
+function cmdOpen(ws, args) {
+  if (args.length !== 1) die("usage: " + CMD + " open <name>");
+  const d = core.getDoc(ws, args[0]);
+  const link = urls(ws.config, d).priv;
+  console.log("private: " + link);
+  const opener = process.platform === "darwin" ? "open" : "xdg-open";
+  const c = spawn(opener, [link], { detached: true, stdio: "ignore" });
+  const fail = (why) => {
+    console.error("could not open a browser (" + opener + ": " + why + "); open the link above by hand");
+    process.exitCode = 1;
+  };
+  const t = setTimeout(() => {
+    console.error("the browser opener (" + opener + ") is still running after 5 s, so it is not known whether a browser opened; if none did, open the link above by hand");
+    c.unref();
+  }, 5000);
+  c.on("error", (e) => { clearTimeout(t); fail(e.code || e.message); });
+  c.on("exit", (code, sig) => { clearTimeout(t); if (code !== 0) fail(sig ? "stopped by " + sig : "exit " + code); });
+}
+
+function cmdCheck(ws, args) {
+  const problems = core.check(ws);
+  if (args.includes("--sources")) {
+    const missing = core.missingSources(ws);
+    if (!missing.length) console.log("sources: every source is on this machine");
+    for (const m of missing) console.log("source not on this machine (information, not a failure): " + m.name + ": " + m.source);
+  }
+  if (problems.length) die(problems.map((p) => CMD + " check FAIL: " + p).join("\n"));
+  if (process.env.FORGE_DEPLOY !== "0" && ws.config.host) {
+    const s = siteState(ws, true);
+    if (s.state !== "current") console.log("note: " + siteLine(s));
+  } else if (ws.config.host) console.log("dry run (FORGE_DEPLOY=0): the link site was not read");
+  console.log(CMD + " check OK");
+}
+
+// Set the link site's host: the host block and the public address in
+// config.json, committed through the normal write path, then deployed and
+// read back. Refused when one is already set, unless --replace: changing it
+// moves every public link. Prints the host set and what to try next.
+const MOVES = "Changing the host: every public link moves to the new address; frozen versions keep the old address in their Markdown export; the old address keeps serving what was deployed to it.";
+// Forge keeps no record of a former host, so unshare never reaches it: said
+// with the old host's own name, project and address wherever the project
+// changes. Forge does not know whether it ever deployed there, so the advice
+// is conditional.
+const hostDesc = (c) => hosts.get(c.host.kind).name + " project " + c.host.project + " at " + c.baseUrl;
+const OLD_PROJECT = "if forge deployed pages to that project, every page shared until then stays public there, out of unshare's reach; delete it there when nothing should stay public. If that project is used for something else, forge's upload replaced what it served there: redeploy it from its own source.";
+// Where pages are deployed to: the address is left out, so a new address for
+// the same project never reads as an abandoned project (forge still deploys
+// to it, and unshare still reaches it). The confirmation keeps siteOf.
+const dest = (c) => JSON.stringify([c.host.kind, c.host.project, c.host.accountId || ""]);
+// forge host's argument work, which needs no store: the flags, the bad-value
+// checks, the name pattern, and the rule that a typed name that is not the
+// default must be set in the environment. main() runs it before the store
+// lock is taken (perl, which takes it, is started with the whole argument
+// list) and cmdHost runs it again, so a value forge would refuse never
+// reaches another program. The default name's secret lookup is cmdHost's.
+function hostArgs(args) {
+  const [kind, ...rest] = args;
+  // Where the person finds the host's project, token and values: printed as a
+  // path, built from the invoked name, never a slice of the guide.
+  const known = hosts.get(kind);
+  const guide = "See " + path.join(ENGINE, "SETUP.md") + ", step 5" + (known ? ", section \"" + known.name + "\"" : "") + ", for the values and the token.";
+  const usage = "usage: " + CMD + " host <" + hosts.kinds.join("|") + "> --project <p> [--account <id>] --url <https://...> [--token-name <NAME>] [--replace]\n" + guide;
+  // A token pasted into any --token-name slot, even one this parse cannot
+  // read (the = form, the flag before the kind), gets the revoke sentence.
+  const pasted = args.some((a) => a.startsWith("--token-name")) ? REVOKE + "\n" : "";
+  const unread = pasted ? "refusing: " + CMD + " host could not read these arguments (--token-name takes the name as the next argument, after the kind); nothing was changed\n" : "";
+  const flags = {};
+  let replace = false;
+  for (let i = 0; i < rest.length; i++) {
+    const k = rest[i];
+    if (k === "--replace") {
+      replace = true;
+      continue;
+    }
+    if (!["--project", "--account", "--url", "--token-name"].includes(k) || rest[i + 1] === undefined) die(unread + pasted + usage);
+    // A later value would hide an earlier one from the checks below while the
+    // whole argument list still goes to the lock's perl: refuse, never echo.
+    if (flags[k.slice(2)] !== undefined) die("refusing: " + k + " was given more than once; nothing was changed\n" + (k === "--token-name" ? REVOKE + "\n" : "") + usage);
+    flags[k.slice(2)] = rest[++i];
+  }
+  const adapter = hosts.get(kind);
+  if (!adapter) die("refusing: the host must be one of " + hosts.kinds.join(", ") + "; nothing was changed\n" + pasted + usage);
+  const bad = [];
+  if (!flags.project) bad.push("--project is required (the " + adapter.name + " project)");
+  if (adapter.needsAccount && !flags.account) bad.push("--account is required for " + adapter.name);
+  if (!adapter.needsAccount && flags.account) bad.push(adapter.name + " takes no --account");
+  if (!/^https?:\/\/[^\s]+[^/\s]$/.test(flags.url || "")) bad.push("--url must be the link site's http(s) address with no trailing slash, for example https://<project>.pages.dev");
+  const given = flags["token-name"] !== undefined;
+  const tokenName = given ? flags["token-name"] : adapter.tokenName;
+  // Never repeats what was typed: a token pasted into this slot must not be printed.
+  const badName = !/^[A-Za-z_][A-Za-z0-9_]*$/.test(tokenName);
+  if (badName) bad.push("--token-name must be the NAME the token is kept under (letters, digits, underscore), never the token itself");
+  if (bad.length) die("refusing: " + bad.join("; ") + "; nothing was changed\n" + (badName ? REVOKE + "\n" : "") + usage);
+  // A value typed on the command line never goes on another program's
+  // argument list: a token pasted here by mistake would reach that program
+  // (and any log it keeps). So the secret command only ever receives a name
+  // forge already holds (the host's default name here, or later the committed
+  // tokenSecret), and a typed name that is not the default is looked up in the
+  // environment only. No pattern can tell a name from a token, so the value is
+  // never printed or saved unless it resolves.
+  if (given && tokenName !== adapter.tokenName) {
+    if (!(process.env[tokenName] || "").trim()) {
+      die("refusing: the --token-name you gave is not set in the environment; nothing was changed. A name typed here is looked up in the environment only, never handed to the secretCommand: " +
+        "if it were a token pasted by mistake, that would put it on another program's command line.\n" +
+        "Two ways on: store the token under the default name " + adapter.tokenName + " (in the environment, or in the secret manager secretCommand reads) and leave --token-name out; " +
+        "or put it in the environment for this one run: NAME=\"$(<your secret command> NAME)\" " + CMD + " host " + kind + " ... --token-name NAME\n" +
+        REVOKE + "\n" + guide);
+    }
+  }
+  return { kind, adapter, flags, replace, tokenName, given, guide };
+}
+function cmdHost(root, args) {
+  const { kind, adapter, flags, replace, tokenName, given, guide } = hostArgs(args);
+  if (!(given && tokenName !== adapter.tokenName)) {
+    const secret = readSecret(tokenName);
+    if (!secret.value) {
+      die("refusing: the token name " + tokenName + " (the default for " + adapter.name + ")" +
+        " resolves to no secret: it is not set in the environment" + (secret.why ? ", and the secretCommand " + secret.why : ", and no secretCommand is set in " + settings.file()) +
+        "; nothing was changed. Store the token under that name first (in the environment, or in a secret manager read by secretCommand), check it by its length, then run this again" +
+        " (a variable added to a shell profile reaches only a new terminal, or export it here).\n" + guide);
+    }
+  }
+  // The host this run writes, to tell whether the commit reported still has it.
+  const mine = { baseUrl: flags.url, host: { kind, project: flags.project, accountId: flags.account } };
+  const t = transaction(root, (ws) => {
+    // Inside the write, on the store at the remote's head, every attempt: a
+    // host another machine set meanwhile is seen here. Nothing has changed
+    // yet: links move only if the typed address differs, and the project note
+    // is about the host in use, once replaced.
+    if (ws.config.host && !replace) {
+      die("refusing: this store already has a host (" + hostDesc(ws.config) + "); to change it, add --replace." + (flags.url !== ws.config.baseUrl ? " " + MOVES : "") +
+        (dest(ws.config) !== dest(mine) ? " Once replaced, about the host in use now, " + hostDesc(ws.config) + ": " + OLD_PROJECT : "") + " Nothing was changed.");
+    }
+    const was = ws.config.host ? ws.config : null;
+    const c = { ...ws.config, baseUrl: flags.url, host: { kind, project: flags.project, ...(flags.account ? { accountId: flags.account } : {}), tokenSecret: tokenName } };
+    fs.writeFileSync(path.join(ws.root, "config.json"), JSON.stringify(c, null, 2) + "\n");
+    return { kind, was };
+  }, (r) => "host: " + kind + " " + flags.project + " at " + flags.url + (r.was ? " (was " + r.was.baseUrl + ")" : ""), ["config.json"]);
+  const was = t.result.was;
+  // Ends with a deploy and a read-back of the link site, so the project, the
+  // token, the address and the no-store rule are proved here (exit 3 if not).
+  // The lines come from the config of the commit reported, like every result.
+  const dry = process.env.FORGE_DEPLOY === "0";
+  // Not proven (and not a dry run): says so first, offers no share, and the
+  // last line names both fixes, since a deploy cannot fix a wrong project.
+  finish(root, t, (m, siteOk, config) => ({
+    lines: [
+      (dry ? "host set (dry run: not proven)" : siteOk ? "host set" : "host saved, not proven") + ": " + hosts.get(config.host.kind).name + ", project " + config.host.project + ", link site " + config.baseUrl + ", token read by the name " + config.host.tokenSecret,
+      ...(siteOf(config) !== siteOf(mine)
+        ? ["note: another machine has since set the host; this command set " + adapter.name + " project " + flags.project + " at " + flags.url + ", and the store now uses the host above"] : []),
+      // Against the host in use (the commit reported), never the one typed:
+      // only when the address changed; a new project at the same address moves no link.
+      ...(was && was.baseUrl !== config.baseUrl ? ["note: the host was replaced, and the public links moved from " + was.baseUrl + " to " + config.baseUrl + ". " + MOVES] : []),
+      // Only when pages now go to another project: the old one keeps what was shared on it.
+      ...(was && dest(was) !== dest(config) ? ["note: the old host was " + hostDesc(was) + ": " + OLD_PROJECT] : []),
+      ...(siteOk || dry ? ["try: " + CMD + " share <name>"] : []),
+    ],
+    // Another machine's host: a --replace with this run's values would undo its change.
+    next: siteOf(config) !== siteOf(mine)
+      ? "the store now uses " + hostDesc(config) + ", which another machine set: a token problem: make the token named " + config.host.tokenSecret + " readable here, then " + CMD + " deploy; the site not answering yet, or a network failure: " + CMD + " deploy again in a minute; a wrong project or address there: ask the owner, since replacing it would undo that machine's change"
+      : "a wrong project or address: run the same " + CMD + " host line with the right values and --replace; a token problem: fix the token, then " + CMD + " deploy; the site not answering yet, or a network failure: " + CMD + " deploy again in a minute",
+  }), { force: true, prove: true });
+}
+
+function copyTree(from, to) {
+  for (const e of fs.readdirSync(from, { withFileTypes: true })) {
+    const a = path.join(from, e.name);
+    const b = path.join(to, e.name);
+    if (e.isDirectory()) {
+      fs.mkdirSync(b, { recursive: true });
+      copyTree(a, b);
+    } else fs.copyFileSync(a, b);
+  }
+}
+
+function cmdInit(args) {
+  if (args.length > 1) die("usage: " + CMD + " init [<path>]");
+  const target = path.resolve(args[0] || workspace.defaultStore());
+  if (fs.existsSync(target) && fs.readdirSync(target).length) die("refusing: " + target + " exists and is not empty");
+  // A path that is not the default is recorded, unless FORGE_WORKSPACE (which
+  // comes first) is set; the setting file is read before anything is made, so
+  // an unreadable one refuses here instead of after the store exists.
+  const record = target !== workspace.defaultStore() && !process.env.FORGE_WORKSPACE;
+  if (record) settings.read();
+  // Every change to a store is a git commit, so git must know who is
+  // committing; asked the way a commit asks, before anything is made.
+  for (const v of ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"]) {
+    if (spawnSync("git", ["var", v], { cwd: require("node:os").tmpdir(), encoding: "utf8" }).status !== 0) {
+      die("refusing: git does not know your name and email, and every change to the store is a git commit, so nothing was created. Set them once, then run the same command again:\n" +
+        '  git config --global user.name "Your Name"\n  git config --global user.email "you@example.com"');
+    }
+  }
+  // Built in a temporary folder beside the target and renamed onto it at the
+  // end, so a failure part way leaves nothing behind (no half-made store that
+  // the next init would refuse as not empty). The rename is the one exclusive
+  // step: it fails when anything is at the target by then (another init's
+  // store, a file). A failure removes this run's temporary folder and nothing
+  // else: never a parent folder it made, which may hold someone else's files.
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temp = fs.mkdtempSync(path.join(path.dirname(target), "." + path.basename(target) + ".forge-init-"));
+  try {
+    copyTree(workspace.TEMPLATE_DIR, temp);
+    fs.copyFileSync(path.join(temp, "config.example.json"), path.join(temp, "config.json"));
+    const run = (a) => {
+      const r = spawnSync("git", a, { cwd: temp, encoding: "utf8" });
+      if (r.status !== 0) die("git " + a.join(" ") + " failed while making the store, so nothing was created:\n" + r.stderr);
+    };
+    run(["init", "-q"]);
+    run(["symbolic-ref", "HEAD", "refs/heads/main"]); // whatever git's own default branch name
+    run(["add", "-A"]);
+    run(["commit", "-q", "-m", "init: store from template v" + workspace.SUPPORTED_TEMPLATE_VERSION]);
+    core.testPause("init");
+    try {
+      fs.renameSync(temp, target); // onto an absent or empty folder only
+    } catch (e) {
+      if (["ENOTEMPTY", "EEXIST", "ENOTDIR", "EISDIR"].includes(e.code)) die("refusing: " + target + " exists and is not empty (something was put there while this ran); nothing was changed there");
+      throw e;
+    }
+  } catch (e) {
+    fs.rmSync(temp, { recursive: true, force: true });
+    throw e;
+  }
+  console.log("created a store at " + target);
+  if (record) {
+    try {
+      settings.write({ store: target });
+    } catch (e) {
+      die("NOT FINISHED: the store was created at " + target + ", but recording it in " + settings.file() + " failed (" + (e.code || e.message) + "), so forge does not use it yet.\n" +
+        "finish with: " + CMD + " store " + shq(target) + " (once the setting file can be written), or set FORGE_WORKSPACE=" + shq(target), NOT_FINISHED);
+    }
+    console.log("recorded in " + settings.file() + ": forge uses this store from now on");
+  }
+  console.log("next: publish a first private page: " + CMD + " publish <file.html>");
+  console.log("to share pages, set a host first: " + CMD + " host <cloudflare-pages|vercel|netlify> ... (SETUP.md step 5 says how)");
+  const w = workspace.whereStore();
+  if (w.root !== target) console.log("note: forge uses " + w.root + " (from " + w.from + "); to use this store instead: " + CMD + " store " + shq(target));
+}
+
+// Which store forge uses and why; with a path, record it in the setting file.
+function cmdStore(args) {
+  if (args.length > 1) die("usage: " + CMD + " store [<path>]");
+  if (!args.length) {
+    const w = workspace.whereStore();
+    console.log("store: " + w.root);
+    console.log("from:  " + w.from);
+    if (!workspace.holdsStore(w.root)) die(workspace.noStore(w));
+    return;
+  }
+  const target = path.resolve(args[0]);
+  if (!workspace.holdsStore(target)) die("refusing: " + target + " holds no forge store, so the setting was not changed. To make one there: " + CMD + " init " + shq(target));
+  settings.write({ store: target });
+  console.log("forge now uses the store at " + target + " (recorded in " + settings.file() + ")");
+  const env = process.env.FORGE_WORKSPACE;
+  if (env && path.resolve(env) !== target) console.log("note: FORGE_WORKSPACE is set and comes first: while it is set, forge uses " + path.resolve(env));
+}
+
+// X.Y.Z strings compared as numbers: is a newer than b?
+function newerVersion(a, b) {
+  const x = a.split(".").map(Number);
+  const y = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+// The CHANGELOG sections newer than a version, each from its "## [X.Y.Z]"
+// heading to the next "## [" heading or the link references at the bottom.
+function changelogSince(text, since) {
+  const out = [];
+  let cur = null;
+  for (const line of text.split("\n")) {
+    const h = /^## \[(\d+\.\d+\.\d+)\]/.exec(line);
+    if (h || /^## \[/.test(line) || /^\[[^\]]+\]: /.test(line)) cur = h && newerVersion(h[1], since) ? { heading: line, lines: [line] } : null;
+    else if (cur) cur.lines.push(line);
+    if (cur && h) out.push(cur);
+  }
+  return out.map((s) => ({ heading: s.heading, text: s.lines.join("\n").trim() }));
+}
+
+// forge update [--check]: move this engine's own git checkout to the latest
+// release tag, by fast-forward only. Needs no store: main() runs it before the
+// store is loaded or locked, so it works on a machine with no store at all.
+const RELEASES = "https://github.com/rishmadaan/forge-artifacts/releases";
+function cmdUpdate(args) {
+  const checkOnly = args.length === 1 && args[0] === "--check";
+  if (args.length > (checkOnly ? 1 : 0)) die("usage: " + CMD + " update [--check]");
+  const g = (a) => git.git(ENGINE, a);
+  const top = g(["rev-parse", "--show-toplevel"]);
+  // The checkout must be this engine's own: a copy unpacked inside another
+  // repository would otherwise fetch and move that repository.
+  if (!top.ok || fs.realpathSync(top.out) !== ENGINE) {
+    die("refusing: this copy of Forge (" + ENGINE + ") is not a git checkout, so " + CMD + " update cannot update it; nothing was changed.\n" +
+      "To update, clone it again (git clone https://github.com/rishmadaan/forge-artifacts) and run bin/install there, or download the latest release from " + RELEASES);
+  }
+  const f = spawnSync("git", ["fetch", "--quiet", "--tags", "origin"], { cwd: ENGINE, encoding: "utf8", timeout: 60000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  if (f.status !== 0) {
+    const why = f.error ? f.error.message : (f.stderr || "").trim().split("\n")[0] || "git fetch exit " + f.status;
+    die("could not reach the remote this copy of Forge was cloned from (git remote origin) to look for a release; nothing was changed\ngit said: " + why);
+  }
+  const tags = g(["tag", "--list", "v*"]);
+  if (!tags.ok) die("could not list the engine's tags: " + tags.err + "; nothing was changed");
+  // A tag is a release only when bin/forge at that tag says its version (the
+  // release workflow checks the same): the highest such tag newer than this
+  // copy wins, and each mismatched tag above it is skipped.
+  const newer = tags.out.split("\n").filter((t) => /^v\d+\.\d+\.\d+$/.test(t)).map((t) => t.slice(1))
+    .filter((v) => newerVersion(v, VERSION)).sort((a, b) => (newerVersion(a, b) ? -1 : 1));
+  let latest = null;
+  const skipped = [];
+  for (const v of newer) {
+    const at = g(["show", "v" + v + ":bin/forge"]);
+    const says = (at.ok && /^const VERSION = "(\d+\.\d+\.\d+)";$/m.exec(at.out)) || null;
+    if (says && says[1] === v) { latest = v; break; }
+    skipped.push("skipped tag v" + v + ": bin/forge at that tag " + (says ? "says VERSION " + says[1] : "has no VERSION line") + ", so it is not a release");
+  }
+  if (checkOnly) for (const l of skipped) console.log(l);
+  if (!latest) return console.log("Forge " + VERSION + " is the latest release");
+  const tag = "v" + latest;
+  const log = g(["show", tag + ":CHANGELOG.md"]);
+  const sections = log.ok ? changelogSince(log.out, VERSION) : [];
+  if (checkOnly) {
+    console.log("Forge " + latest + " is available (you have " + VERSION + "); update with: " + CMD + " update");
+    for (const s of sections) console.log(s.heading);
+    return;
+  }
+  const dirty = g(["status", "--porcelain", "--untracked-files=no"]);
+  if (!dirty.ok) die("could not read this checkout's git status: " + dirty.err + "; nothing was changed");
+  if (dirty.out.trim()) {
+    die("refusing: this checkout of Forge (" + ENGINE + ") has uncommitted changes to tracked files, so it was not updated; nothing was changed:\n" +
+      indent(dirty.out) + "\nCommit or undo them, then run " + CMD + " update again");
+  }
+  const target = g(["rev-parse", tag + "^{commit}"]);
+  if (!target.ok) die("could not read the commit of " + tag + ": " + target.err + "; nothing was changed");
+  const anc = g(["merge-base", "--is-ancestor", "HEAD", target.out]);
+  if (!anc.ok && anc.err) die("could not compare this checkout with " + tag + ": " + anc.err + "; nothing was changed");
+  if (!anc.ok) {
+    die("refusing: this checkout of Forge (" + ENGINE + ") has commits that release " + latest + " does not have, so it cannot move to it by a fast-forward; nothing was changed. " +
+      "Move those commits elsewhere (another branch) and return this checkout to a release, or update it by hand with git");
+  }
+  // As for the store (lib/git.js): never overwrite an ignored file (a store
+  // under workspace/) at a path the release adds, and never stash anything.
+  // A forge command running on this machine's store has its files loaded from
+  // this folder: wait for it (the same lock the writing commands take). Only
+  // read: a store with no lock file has no holder, and none is made.
+  let where = null;
+  try { where = workspace.whereStore(); } catch { where = null; } // no readable setting: no store found
+  if (where && fs.existsSync(lock.lockFile(where.root)) && lock.isHeld(where.root)) {
+    die("refusing: another " + CMD + " command is running on the store at " + where.root + " (it holds the store lock), so this copy of Forge was not updated; nothing was changed. " +
+      "Run " + CMD + " update again when it finishes");
+  }
+  const was = g(["rev-parse", "HEAD"]);
+  if (!was.ok) die("could not read this checkout's HEAD: " + was.err + "; nothing was changed");
+  const m = g(["merge", "--ff-only", "--no-overwrite-ignore", "--no-autostash", "--quiet", target.out]);
+  if (!m.ok) die("git refused the update to " + latest + ": " + m.err + "\nnothing was changed");
+  // "updated" only once the updated command itself says the new version.
+  const ver = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8", timeout: 30000 });
+  const said = (ver.stdout || "").trim();
+  if (ver.status !== 0 || said !== "Forge " + latest) {
+    const why = ver.status === 0 ? "printed '" + said + "'" : "failed (" + (((ver.stderr || "").trim().split("\n").find((l) => /Error/.test(l))) || (ver.error ? ver.error.message : "exit " + ver.status)) + ")";
+    die("this checkout of Forge moved to " + tag + " (" + short(target.out) + "), but the updated " + CMD + " --version " + why + " instead of printing Forge " + latest + ", so this copy of Forge may not work.\n" +
+      "To go back to " + VERSION + ": git -C " + shq(ENGINE) + " reset --keep " + was.out);
+  }
+  console.log("updated Forge " + VERSION + " -> " + latest);
+  for (const s of sections) console.log("\n" + s.text);
+  // The command and the skill are links into this folder, so they now run
+  // the new release; this says whether those links are in place.
+  const inst = spawnSync(process.execPath, [path.join(ENGINE, "bin", "install"), "--check"], { encoding: "utf8" });
+  console.log("\nbin/install --check:\n" + indent(((inst.stdout || "") + (inst.stderr || "")).trim()));
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  const [cmd, ...rest] = argv;
+  if (!cmd || cmd === "--help" || cmd === "-h" || cmd === "help") return console.log(USAGE);
+  // Another program may own the name forge; this line is how to tell them apart.
+  if (cmd === "--version" || cmd === "version") return console.log("Forge " + VERSION);
+  // A token pasted into this slot must not reach perl's argument list (the
+  // store lock) or any output: refused before anything else, never repeated.
+  if (cmd !== "host" && rest.some((a) => a === "--token-name" || a.startsWith("--token-name="))) {
+    die("refusing: --token-name belongs to " + CMD + " host only (share and deploy read the name it saved; to change it, run the same " + CMD + " host line with --replace); nothing was changed. " + REVOKE);
+  }
+  if (cmd === "init") return cmdInit(rest);
+  if (cmd === "store") return cmdStore(rest);
+  if (cmd === "update") return cmdUpdate(rest);
+  const known = ["host", "open", "publish", "share", "unshare", "rename", "list", "check", "regenerate", "deploy", "sync", "recover", "import"];
+  if (!known.includes(cmd)) die("unknown command: " + cmd + "\n\n" + USAGE);
+  // Needs no store: a token pasted into host is refused (with the revoke
+  // sentence) before the no-store stop, and before the lock.
+  if (cmd === "host") hostArgs(rest);
+  let root;
+  let ws;
+  if (cmd === "recover") {
+    const w = workspace.whereStore();
+    root = w.root;
+    if (!fs.existsSync(path.join(root, ".git"))) die(workspace.noStore(w));
+  } else {
+    ws = workspace.load();
+    root = ws.root;
+  }
+  storeRoot = root;
+  if (LOCKED.has(cmd) && !lock.weHoldIt(root)) {
+    if (process.env.FORGE_LOCK_HELD) die("refusing: started as the lock holder's command, but the store lock is not held; nothing was changed");
+    process.exit(lock.runLocked(root, [process.execPath, BIN, ...argv]));
+  }
+  if (cmd === "publish") cmdPublish(root, rest);
+  else if (cmd === "share") cmdShare(root, rest);
+  else if (cmd === "unshare") cmdUnshare(root, rest);
+  else if (cmd === "rename") cmdRename(root, rest);
+  else if (cmd === "regenerate") cmdRegenerate(root);
+  else if (cmd === "import") cmdImport(root, rest);
+  else if (cmd === "deploy") cmdDeploy(root);
+  else if (cmd === "sync") cmdSync(root);
+  else if (cmd === "recover") cmdRecover(root, rest);
+  else if (cmd === "list") cmdList(ws, rest);
+  else if (cmd === "check") cmdCheck(ws, rest);
+  else if (cmd === "open") cmdOpen(ws, rest);
+  else if (cmd === "host") cmdHost(root, rest);
+}
+
+try {
+  main();
+} catch (e) {
+  // Past the push attempt (afterPush set), an escaped exception is never exit
+  // 1: the change is saved (3) or not known to be (4). report()'s own exits
+  // (3, 4) pass through.
+  if (afterPush && !(e instanceof ForgeExit && e.code !== 1)) {
+    if (afterPush.saved === "yes") {
+      // This copy is not known to have caught up: never say the private link works here.
+      const local = afterPush.local === "yes";
+      if (afterPush.priv) console.log("private: " + afterPush.priv);
+      console.error([
+        "NOT FINISHED: a step after saving failed",
+        "  done: " + afterPush.message + " (saved)",
+        ...(afterPush.priv && !local ? ["  saved; not in this machine's copy of the store until it catches up: " + afterPush.priv] : []),
+        "  a later step failed: " + e.message,
+        local ? "finish with: " + CMD + " deploy" : "finish with: " + CMD + " sync, then " + CMD + " deploy (the link site is not confirmed)",
+      ].join("\n"));
+      process.exit(NOT_FINISHED);
+    }
+    console.error("NOT KNOWN whether the change was saved: " + afterPush.message + "\n  " + e.message + "\n" + EXIT4);
+    process.exit(NOT_KNOWN);
+  }
+  console.error(e.message);
+  process.exit(e instanceof ForgeExit ? e.code : 1);
+}

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-label="How Forge works: forge publish saves your page privately in your own store; forge share puts it on your own link site; every version keeps its own frozen link.">
+<title>How Forge works: forge publish saves your page privately in your own store; forge share puts it on your own link site; every version keeps its own frozen link.</title>
+<rect x="0.5" y="0.5" width="959" height="299" rx="18" fill="#f4f6fb" stroke="#d8dbe3"/>
+<rect x="28" y="28" width="232" height="150" rx="14" fill="#ffffff" stroke="#d8dbe3"/>
+<g fill="none" stroke="#3451b2" stroke-width="2.2" stroke-linejoin="round"><path d="M46 46h12l6 6v17h-18z"/><path d="M58 46v6h6"/></g>
+<text x="78" y="65" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#1f2430">Your page</text>
+<text x="46" y="98" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">An HTML file, or a folder</text>
+<text x="46" y="120" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">with its images. Made by</text>
+<text x="46" y="142" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">any agent, or by you.</text>
+<path d="M266 103H354" stroke="#3451b2" stroke-width="2.5"/>
+<path d="M350 97L358 103L350 109" fill="none" stroke="#3451b2" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="312" y="91" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" font-weight="600" fill="#3451b2" text-anchor="middle">forge publish</text>
+<rect x="364" y="28" width="232" height="150" rx="14" fill="#ffffff" stroke="#d8dbe3"/>
+<g fill="none" stroke="#3451b2" stroke-width="2.2" stroke-linecap="round"><rect x="382" y="54" width="18" height="13" rx="3"/><path d="M386 54v-3a5 5 0 0 1 10 0v3"/></g>
+<text x="414" y="65" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#1f2430">Private</text>
+<text x="382" y="98" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">Saved in your store, a git</text>
+<text x="382" y="120" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">repository you own. Only</text>
+<text x="382" y="142" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">your machines open it.</text>
+<path d="M602 103H690" stroke="#3451b2" stroke-width="2.5"/>
+<path d="M686 97L694 103L686 109" fill="none" stroke="#3451b2" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="648" y="91" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="12.5" font-weight="600" fill="#3451b2" text-anchor="middle">forge share</text>
+<rect x="700" y="28" width="232" height="150" rx="14" fill="#ffffff" stroke="#d8dbe3"/>
+<g fill="none" stroke="#3451b2" stroke-width="2.2"><circle cx="728" cy="59" r="10"/><ellipse cx="728" cy="59" rx="4.5" ry="10"/><path d="M718 59h20"/></g>
+<text x="750" y="65" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#1f2430">Shared</text>
+<text x="718" y="98" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">On your link site: Cloudflare</text>
+<text x="718" y="120" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">Pages, Vercel or Netlify.</text>
+<text x="718" y="142" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">forge unshare takes it down.</text>
+<rect x="28" y="198" width="904" height="74" rx="14" fill="#e4f4ec"/>
+<text x="48" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#1f7a4d">Every version keeps its own frozen link</text>
+<text x="48" y="254" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#1f2430">…/d/k3Jq9xW2aB7c/</text>
+<text x="206" y="254" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">always the newest version</text>
+<text x="470" y="254" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14" font-weight="600" fill="#1f2430">…/v1/  …/v2/  …/v3/</text>
+<text x="642" y="254" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="400" fill="#5b6478">each one exactly as it was published</text>
+</svg>
