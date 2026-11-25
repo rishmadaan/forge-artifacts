@@ -269,8 +269,8 @@ release and prints what changed. It updates the command in this clone, and
 skill links made by `bin/install` update with it. A skill installed through a
 plugin store updates separately, through that store:
 `claude plugin update forge-artifacts@forge-artifacts`,
-`gemini extensions update forge-artifacts`, or `npx skills update`. It
-refuses, changing nothing, when this copy is not a git checkout, has uncommitted changes or commits of its own,
+`gemini extensions update forge-artifacts`, or `npx skills update`. `forge
+update` refuses, changing nothing, when this copy is not a git checkout, has uncommitted changes or commits of its own,
 or while another forge command holds the store lock; run it when no other
 forge command is running. The
 store is not touched. `CHANGELOG.md` lists every release.
