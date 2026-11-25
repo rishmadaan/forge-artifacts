@@ -8,9 +8,6 @@ of a date. Open an issue to suggest one, or to say which you need first.
 
 - [ ] **First real deploys on Vercel and Netlify.** Both adapters pass every
   test against a stand-in host; neither has deployed to a real account yet.
-- [ ] **macOS checks in CI.** The test suite runs on macOS runners; the store
-  lock's wait message (through `lsof`), `forge init`'s rename and `forge open`
-  are the parts most likely to differ there.
 
 ## Next
 
@@ -58,6 +55,8 @@ of a date. Open an issue to suggest one, or to say which you need first.
 
 ## Done
 
+- [x] **macOS checks in CI** (2026-11-25): the full test suite runs on Linux
+  and macOS with every change, including the store lock's `lsof` path.
 - [x] **0.1.0, first public release** (2026-11-25): publish privately, share at
   a link on your own host (Cloudflare Pages, Vercel, Netlify; Vercel and
   Netlify tested against a stand-in host so far), frozen versions,
