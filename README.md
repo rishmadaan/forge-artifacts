@@ -8,7 +8,6 @@
 
 <p align="center">
   <a href="https://github.com/rishmadaan/forge-artifacts/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/rishmadaan/forge-artifacts?sort=semver"></a>
-  <a href="https://github.com/rishmadaan/forge-artifacts/actions/workflows/ci.yml"><img alt="Tests" src="https://github.com/rishmadaan/forge-artifacts/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
