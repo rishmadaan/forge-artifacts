@@ -563,6 +563,11 @@ a newer release exists; `forge update` moves a git checkout to it. To be told
 of a new release without checking, open the repository on GitHub, choose
 Watch, then Custom, tick Releases, and apply.
 
+When several machines use one store, update every one of them before writing
+from any: an older copy rebuilds the store's generated pages in its own style
+on its next write, and the link site then serves that until a newer copy
+writes again (`forge regenerate` puts them back).
+
 ## Tests
 
 ```
