@@ -29,7 +29,7 @@ site you own. Every version stays frozen at its own link, and everything lives
 as plain files in a git repository you own.
 
 <p align="center">
-  <img alt="A terminal: forge publish report.html prints a private link, forge share report prints a public link (here from a local stand-in host), then the shared page in a browser, with its dark-mode switch and Markdown buttons." src="docs/assets/demo.gif" width="860">
+  <img alt="A terminal, on a store with a host set: forge publish report.html prints a private link; forge share report prints the private link and a public link; forge publish --live updates the shared page to v2." src="docs/assets/terminal.svg" width="860">
 </p>
 
 ## Why Forge
@@ -114,8 +114,10 @@ $ forge share report       # once a host is set: public: https://pages.example.o
 ```
 
 <p align="center">
-  <img alt="A terminal, on a store with a host set: forge publish report.html prints a private link; forge share report prints the private link and a public link; forge publish --live updates the shared page to v2." src="docs/assets/terminal.svg" width="860">
+  <img alt="A recording: forge publish report.html prints a private link; forge share report prints a public link from a local test host; the page is edited and forge publish report.html --live makes v2; then the shared page in a browser in dark mode, with its Markdown and light-mode buttons, and its history page listing v1 and v2, each with its own link." src="docs/assets/demo.gif" width="860">
 </p>
+
+<p align="center"><em>Recorded on a local test host, so no page left this machine; with your own host the public link is on your site. The last frames are the shared page and its history page.</em></p>
 
 **Setting it up with an agent:** point your agent at [SETUP.md](SETUP.md). It
 is written for an agent to walk a person through every step, including

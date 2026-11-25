@@ -5,7 +5,8 @@
 # scratch home folder, a store made with forge init, and the stand-in host the
 # tests use (test/fakehost.js), so nothing is deployed anywhere and the public
 # link it prints is that local host's address. The terminal part is
-# demo.tape; the last frames are the shared page, opened in a browser.
+# demo.tape; the last frames are the shared page and its history page, opened
+# in a browser.
 set -euo pipefail
 # A clean environment: only HOME, PATH, TERM, LANG and TMPDIR come in, so no
 # FORGE_* or GIT_* variable the caller has set (FORGE_WORKSPACE,
@@ -59,7 +60,15 @@ export PATH="$DEMO_NPX_BIN:$HOME/.local/bin:$PATH"
 forge init >/dev/null
 forge host cloudflare-pages --project site --account demo --url "$DEMO_SITE" >/dev/null
 
-cat > "$work/page/report.html" <<'HTML'
+# A page published before the tape, unseen: the first publish in a store also
+# makes the master index (and so deploys), and the recorded publish should
+# show what every later one prints.
+printf '<!doctype html><title>Notes</title><p>Notes.</p>\n' > "$work/page/notes.html"
+forge publish "$work/page/notes.html" >/dev/null
+
+# The page; the tape edits one number in it for the second version.
+page() {
+  cat <<HTML
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quarterly report</title>
@@ -67,32 +76,37 @@ cat > "$work/page/report.html" <<'HTML'
 </head><body>
 <h1>Quarterly report</h1>
 <p>What shipped this quarter, what it cost, and what comes next.</p>
-<div class="k"><div><b>14</b>features shipped</div><div><b>3</b>incidents</div><div><b>92%</b>on time</div></div>
+<div class="k"><div><b>$1</b>features shipped</div><div><b>3</b>incidents</div><div><b>92%</b>on time</div></div>
 <h2>Highlights</h2>
 <ul><li>The new onboarding flow went live in week 3.</li><li>Support replies now average under two hours.</li><li>Two older services were retired.</li></ul>
 </body></html>
 HTML
+}
+page 14 > "$work/page/report.html"
 
 export FORGE_DEMO_WORK="$work/page"
 (cd "$work" && vhs "$assets/demo.tape")
 
-# The shared page, as a reader opens it: dark mode, the page's own switch and Markdown buttons in view.
+# The shared page as a reader opens it (dark mode, the page's own switch and
+# Markdown buttons in view), then its history page: every version at its own link.
 url="$(forge list --json | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{const d=JSON.parse(s).documents.find((x)=>x.name==="report");process.stdout.write((d && d.publicUrl)||"")})')"
 [ -n "$url" ] || { echo "demo.sh: the shared page has no public link" >&2; exit 1; }
-HOME="$real_home" python3 - "$url" "$work/page.png" <<'PY'
+HOME="$real_home" python3 - "$url" "$work" <<'PY'
 import sys
 from playwright.sync_api import sync_playwright
+url, work = sys.argv[1], sys.argv[2]
 with sync_playwright() as p:
     b = p.chromium.launch()
     pg = b.new_page(viewport={"width": 1200, "height": 640}, color_scheme="dark")
-    pg.goto(sys.argv[1])
-    pg.wait_for_timeout(500)
-    pg.screenshot(path=sys.argv[2])
+    for go, out in ((url, "page.png"), (url + "versions/", "history.png")):
+        pg.goto(go)
+        pg.wait_for_timeout(500)
+        pg.screenshot(path=work + "/" + out)
     b.close()
 PY
 
-# Terminal, then four seconds of the page; 12 frames a second, one palette.
-ffmpeg -loglevel error -y -i "$work/demo-terminal.mp4" -loop 1 -t 4 -i "$work/page.png" \
-  -filter_complex "[0:v]fps=12,scale=960:-1:flags=lanczos,setsar=1[a];[1:v]fps=12,scale=960:-1:flags=lanczos,setsar=1,format=yuv420p[b];[a][b]concat=n=2:v=1[v];[v]split[x][y];[x]palettegen=max_colors=96[p];[y][p]paletteuse=dither=bayer:bayer_scale=4" \
+# Terminal, then the page and its history page; 12 frames a second, one palette.
+ffmpeg -loglevel error -y -i "$work/demo-terminal.mp4" -loop 1 -t 3 -i "$work/page.png" -loop 1 -t 3 -i "$work/history.png" \
+  -filter_complex "[0:v]fps=12,scale=960:-1:flags=lanczos,setsar=1[a];[1:v]fps=12,scale=960:-1:flags=lanczos,setsar=1,format=yuv420p[b];[2:v]fps=12,scale=960:-1:flags=lanczos,setsar=1,format=yuv420p[c];[a][b][c]concat=n=3:v=1[v];[v]split[x][y];[x]palettegen=max_colors=96[p];[y][p]paletteuse=dither=bayer:bayer_scale=4" \
   "$assets/demo.gif"
 ls -l "$assets/demo.gif"

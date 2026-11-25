@@ -8,19 +8,27 @@ Set Width 1200
 Set Height 640
 Set Padding 32
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 55ms
+Set TypingSpeed 45ms
 
 Hide
 Type "cd $FORGE_DEMO_WORK && clear"
 Enter
 Show
 
-Sleep 800ms
+Sleep 700ms
 Type "forge publish report.html"
-Sleep 400ms
+Sleep 300ms
 Enter
-Sleep 3.5s
+Sleep 3s
 Type "forge share report"
-Sleep 400ms
+Sleep 300ms
 Enter
-Sleep 6s
+Sleep 4.5s
+Type "perl -pi -e 's/>14</>15</' report.html"
+Sleep 300ms
+Enter
+Sleep 500ms
+Type "forge publish report.html --live"
+Sleep 300ms
+Enter
+Sleep 4.5s
