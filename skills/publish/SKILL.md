@@ -17,16 +17,14 @@ on this machine. forge's own messages print the name it was started as, so a
 command they name can be run as printed.
 
 **Not installed, or no store?** If the command is not found (and
-`bin/install --check` does not say it is installed), install it with the
-owner's yes first: clone `https://github.com/rishmadaan/forge-artifacts` into
-a folder they choose (suggest `~/forge-artifacts`), then run that clone's
-`bin/install --no-skill` when this skill's real path is not inside it (a
-plugin, an extension or skills.sh installed this skill), or `bin/install`
-otherwise; then follow that clone's `SETUP.md` (it checks what Forge needs and
-makes the store with `forge init`). If forge stops with `no store at ...`,
-walk the owner through `SETUP.md` in the Forge repository (the folder the
-command's real path is in, one level up) from its step 3. Do not publish
-elsewhere meanwhile.
+`bin/install --check` does not say it is installed), ask the owner first,
+then clone `https://github.com/rishmadaan/forge-artifacts` into a folder they
+choose (suggest `~/forge-artifacts`) and walk them through that clone's
+`SETUP.md` from step 1 (its step 2 says to run `bin/install --no-skill` when
+this skill came from a plugin, an extension or skills.sh). If forge stops
+with `no store at ...`, walk the owner through `SETUP.md` in the Forge
+repository (the folder the command's real path is in, one level up) from its
+step 3. Do not publish elsewhere meanwhile.
 
 1. **Publish:** `forge publish <file.html>`, or `forge publish <folder>` when the
    page has images or other files (the folder needs `index.html` at its top;
