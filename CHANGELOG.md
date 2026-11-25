@@ -10,6 +10,11 @@ so under that release. To update a copy cloned with git, run `forge update`
 
 ## [Unreleased]
 
+- Install Forge's `publish` skill from your agent's plugin store: Claude Code (`claude plugin marketplace add rishmadaan/forge-artifacts`, then `claude plugin install forge-artifacts@forge-artifacts`), Gemini CLI (`gemini extensions install https://github.com/rishmadaan/forge-artifacts`) or skills.sh (`npx skills add rishmadaan/forge-artifacts`). The `forge` command still comes from a clone of this repository.
+- `bin/install --no-skill` links the command only, for an agent that gets the skill from a store. It removes the skill links this checkout made earlier, and only those; the choice is recorded and kept by later runs (`bin/install --skill` links the skill again). `bin/install --check` says `not linked, by choice:` for each skill path.
+- The `publish` skill now tells an agent how to install the command when it is missing, with your yes first.
+- The README shows Forge at work (a short recording), says that older versions stay at their own links, and answers "why not just run wrangler?".
+
 ## [0.1.0] - 2026-11-25
 
 The first public release.

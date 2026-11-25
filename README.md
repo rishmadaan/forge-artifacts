@@ -29,7 +29,7 @@ site you own. Every version stays frozen at its own link, and everything lives
 as plain files in a git repository you own.
 
 <p align="center">
-  <img alt="A terminal, on a store with a host set: forge publish report.html prints a private link; forge share report prints the private link and a public link; forge publish --live updates the shared page to v2." src="docs/assets/terminal.svg" width="860">
+  <img alt="A terminal: forge publish report.html prints a private link, forge share report prints a public link (here from a local stand-in host), then the shared page in a browser, with its dark-mode switch and Markdown buttons." src="docs/assets/demo.gif" width="860">
 </p>
 
 ## Why Forge
@@ -45,8 +45,8 @@ happened to make them.
   to run it outside its sandbox.
 - **Private until you say.** A new page is private. Sharing is a separate step,
   and a shared page changes only when you ask with `--live`.
-- **Every version keeps its link.** The stable link shows the newest version;
-  each version also keeps a frozen link of its own.
+- **Older versions stay.** The stable link shows the newest version; every
+  earlier version stays at its own frozen link.
 - **Yours, end to end.** The store is a git repository you own; the public
   site is on your own host account, at its address or your own domain.
   Nothing to export when you leave.
@@ -56,6 +56,11 @@ happened to make them.
 - **Refuses instead of guessing.** Every command finishes, refuses and changes
   nothing, or says exactly what is left; it never reports success it has not
   read back from the live site.
+- **More than the host's upload command.** `wrangler`, `vercel deploy` and
+  `netlify deploy` put files online. Forge adds the rest: private by default,
+  versions at frozen links, a store you own behind a link site on any of three
+  hosts, share and unshare, a read-back of the live site, and a skill any
+  agent follows.
 
 <p align="center">
   <picture>
@@ -108,6 +113,10 @@ to share it: set a host first with forge host (SETUP.md step 5), then run forge 
 $ forge share report       # once a host is set: public: https://pages.example.org/d/k3Jq9xW2aB7c/
 ```
 
+<p align="center">
+  <img alt="A terminal, on a store with a host set: forge publish report.html prints a private link; forge share report prints the private link and a public link; forge publish --live updates the shared page to v2." src="docs/assets/terminal.svg" width="860">
+</p>
+
 **Setting it up with an agent:** point your agent at [SETUP.md](SETUP.md). It
 is written for an agent to walk a person through every step, including
 connecting a host.
@@ -131,6 +140,20 @@ listed in [CHANGELOG.md](CHANGELOG.md) and on the
 [releases page](https://github.com/rishmadaan/forge-artifacts/releases); on
 GitHub, Watch, then Custom, then Releases tells you of a new one. Run
 `forge update` when no other forge command is running.
+
+### From your agent's plugin store
+
+A store gives your agent the `publish` skill. The `forge` command still comes
+from a clone: run the last line after whichever store you use
+(`--no-skill` links the command only, since the store brought the skill).
+
+```sh
+claude plugin marketplace add rishmadaan/forge-artifacts     # Claude Code, then:
+claude plugin install forge-artifacts@forge-artifacts
+gemini extensions install https://github.com/rishmadaan/forge-artifacts   # Gemini CLI
+npx skills add rishmadaan/forge-artifacts                     # skills.sh (add -g for every project)
+git clone https://github.com/rishmadaan/forge-artifacts ~/forge-artifacts && ~/forge-artifacts/bin/install --no-skill
+```
 
 ### `forge` or `forgee`
 
@@ -243,6 +266,15 @@ pages has an unguessable link of its own, which you can keep to yourself.
 
 **What if I stop using Forge?** Your store is a git repository of HTML files,
 and your link site keeps serving what it has. There is nothing to export.
+
+**Do older versions stay?** Yes. Every version is frozen at its own link; the
+stable link shows the newest. Sharing a page shares its earlier versions too
+(see [Private and shared](#private-and-shared)).
+
+**Why not just run wrangler?** For one upload, you can; Forge runs the host's
+own CLI too. What it adds is in [Why Forge](#why-forge): privacy by default,
+frozen versions, a store you own, share and unshare, and a read-back of every
+upload.
 
 ## Contributing
 

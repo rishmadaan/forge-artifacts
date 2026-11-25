@@ -33,6 +33,11 @@ manager, then check again.
 1. Clone this repository somewhere they will keep it, for example
    `git clone https://github.com/rishmadaan/forge-artifacts ~/forge-artifacts`.
 2. Run `~/forge-artifacts/bin/install`, then `~/forge-artifacts/bin/install --check`.
+   If the agent already has Forge's `publish` skill from a plugin store (a
+   Claude Code plugin, a Gemini CLI extension, or `npx skills add`), run
+   `~/forge-artifacts/bin/install --no-skill` instead: it links the command
+   only, and records that choice so later runs keep it
+   (`bin/install --skill` links the skill again).
 3. If `--check` says `~/.local/bin` is not on `PATH`, add it to their shell
    profile (for example `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc`
    or `~/.bashrc`) and open a new terminal.
@@ -228,11 +233,14 @@ one (`docs/reference.md`, "Is the link site current?").
    that one, not Forge's. For a folder marked `skipped:`, and for agents that
    read neither folder, point them at Forge's skill file by its full path,
    `<this repository>/skills/publish/SKILL.md` (`--check` prints it).
+   `not linked, by choice:` means `bin/install --no-skill` was run: the agent
+   gets the skill from its plugin store, so there is nothing to link.
 2. Paste this paragraph into the instructions file each agent reads (for
    example `AGENTS.md`, `CLAUDE.md`, or the agent's global instructions),
    with `<command>` replaced by the name from step 2 (`forge` or `forgee`),
-   and `<skill>` by `the publish skill` when both skill lines say `linked:`,
-   or by the full path of Forge's `SKILL.md` when either says `skipped:`:
+   and `<skill>` by `the publish skill` when both skill lines say `linked:`
+   or `not linked, by choice:`, or by the full path of Forge's `SKILL.md` when
+   either says `skipped:`:
 
 > To publish any page meant to be read (a report, plan, explainer, deck,
 > mockup), use Forge, never a vendor's own artifact or publish feature: run

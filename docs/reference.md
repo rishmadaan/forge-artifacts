@@ -165,6 +165,27 @@ Also refused, changing nothing: an unknown kind, a missing or extra value, a
 refusals print the usage and the path of `SETUP.md` with the step and the
 host's section.
 
+## The installer
+
+`bin/install` links the engine into the home folder: the command into
+`~/.local/bin` (`forge`, or `forgee`; see below) and the `publish` skill into
+`~/.agents/skills/publish` and `~/.claude/skills/publish`. It never replaces
+what it did not make there: a taken command path refuses the whole install,
+changing nothing; a taken skill path is skipped with a note.
+
+| Flag | What it does |
+|---|---|
+| (none) | Make the links, keeping every choice recorded earlier. |
+| `--command forge\|forgee` | Choose the command's name; recorded. |
+| `--no-skill` | Link the command only, for an agent that gets the skill from a plugin store (a Claude Code plugin, a Gemini CLI extension, `npx skills add`). Removes the skill links this checkout's installer made, only when it can prove them (its own link text, resolving to this checkout's `skills/publish`); anything else there is left alone and named. Recorded (`"skill": false`), so later runs keep it. |
+| `--skill` | Link the skill again; recorded. |
+| `--check` | Report, changing nothing: `ok:` or `MISSING:` for the command, `linked:`, `skipped:` (another tool's `publish` skill is there) or `not linked, by choice:` (`--no-skill`; it cannot tell a store's copy of Forge's skill from another tool's) for each skill link, then `command: <name>`. Exit 1 when something is missing. |
+| `--uninstall` | Remove only the links this installer made; leave anything else. |
+
+The choices are kept in the forge setting file (`$XDG_CONFIG_HOME/forge/settings.json`,
+else `~/.config/forge/settings.json`). `forge update` runs `bin/install --check`
+only, so it reports the links and changes none.
+
 ## The command's name
 
 The command is `forge`, or `forgee` on a machine where another program already
@@ -553,7 +574,9 @@ where a patch release (0.1.1) fixes, a minor release (0.2.0) adds, and a major
 release (1.0.0) breaks. While the version starts with 0, a minor release may
 also carry a breaking change; `CHANGELOG.md` says so under that release.
 `forge --version` prints the version of this copy; the `VERSION` line in
-`bin/forge` is the only place it is written.
+`bin/forge` is where it is written, and `scripts/release.sh` sets the same
+version in `gemini-extension.json` (Gemini CLI requires one) in the release's
+commit. A test fails whenever the two differ.
 
 `CHANGELOG.md`, at the top of the repository, says what changed in each
 release for the people who use it. Every release is a git tag `vX.Y.Z` on

@@ -30,8 +30,8 @@ const flat = (s) => s.replace(/\s+/g, " ");
 
   await check("README is for a first-time reader: an example, a short command table, the clone address; the detail is in docs/reference.md", () => {
     const raw = read("README.md");
-    // A landing page: pictures, badges and the comparison add markup, not reading; the detail stays in the reference.
-    assert.ok(raw.split("\n").length < 260, "README is short: " + raw.split("\n").length + " lines");
+    // A landing page: pictures, badges, the comparison and the store install lines add markup, not reading; the detail stays in the reference.
+    assert.ok(raw.split("\n").length < 300, "README is short: " + raw.split("\n").length + " lines");
     assert.ok(raw.includes("$ forge publish report.html\npublished report v1 (private)\nprivate: "), "a short example of a publish and its result");
     assert.ok(raw.includes("git clone https://github.com/rishmadaan/forge-artifacts"), "the clone address");
     const rows = raw.split("\n").filter((l) => l.startsWith("| `forge "));
@@ -103,7 +103,7 @@ const flat = (s) => s.replace(/\s+/g, " ");
         const p = path.join(dir, e.name);
         const r = rel ? rel + "/" + e.name : e.name;
         if (e.isDirectory()) walk(p, r);
-        else if (e.isFile()) {
+        else if (e.isFile() && !/\.(gif|png)$/.test(e.name)) { // images are bytes, not text
           fs.readFileSync(p, "utf8").split("\n").forEach((l, i) => {
             if (/\b[CFNPRS][0-9]+(-[0-9]+)?[a-z]?\b/.test(l)) hits.push(r + ":" + (i + 1) + ": " + l.trim());
           });

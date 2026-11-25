@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- The repository's social preview card, docs/assets/social-preview.png (1280 by 640).
+     Remake it from the repository root with Python Playwright:
+     python3 -c "from playwright.sync_api import sync_playwright as s; p=s().start(); b=p.chromium.launch(); g=b.new_page(viewport={'width':1280,'height':640}); g.goto('file://'+__import__('os').path.abspath('docs/assets/social-preview.html')); g.screenshot(path='docs/assets/social-preview.png'); b.close(); p.stop()" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Forge social preview</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; background: #0b0e14; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 36px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  img { width: 1160px; height: auto; display: block; }
+  .agents { display: flex; gap: 14px; }
+  .agents span { color: #9aa3b5; font-size: 22px; font-weight: 600; padding: 9px 20px; border: 1px solid #2f3646; border-radius: 999px; }
+  .agents span.cmd { color: #8ea4ff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; border-color: #1d2540; background: #1d2540; }
+</style>
+</head>
+<body>
+  <img src="hero-dark.svg" alt="Forge: your agents' pages, on a link site you own.">
+  <div class="agents">
+    <span class="cmd">forge publish page.html</span>
+    <span>Claude Code</span><span>Codex</span><span>Gemini CLI</span><span>any agent</span>
+  </div>
+</body>
+</html>
