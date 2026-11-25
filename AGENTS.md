@@ -88,4 +88,5 @@ Tests make scratch stores and a scratch home folder under the OS temp folder.
    section (`scripts/changelog-section.sh`).
 
 A change to `skills/publish/SKILL.md` that needs unreleased command behaviour
-lands with the release, since Claude Code's plugin copy follows `main`.
+lands with the release, since the copies Claude Code's plugin store and
+skills.sh install follow `main`.
