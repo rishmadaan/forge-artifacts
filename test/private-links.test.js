@@ -10,8 +10,8 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { check, done, run, tmp, makeStore, makeSrc, manifest, CONFIG } = require("./helpers.js");
 
-const NO_SHELF = { ...CONFIG };
-delete NO_SHELF.privateBaseUrl;
+const NO_PRIVATE_BASE_URL = { ...CONFIG };
+delete NO_PRIVATE_BASE_URL.privateBaseUrl;
 
 // A fake opener: records its argument, exits with the code in <dir>/code (0 by default).
 function fakeOpener() {
@@ -31,7 +31,7 @@ const privLine = (r) => (r.out.match(/^private: (.*)$/m) || [])[1];
 
 (async () => {
   await check("no privateBaseUrl: the store loads, and every private: line is the page's file URL in its own tree", () => {
-    const store = makeStore(NO_SHELF);
+    const store = makeStore(NO_PRIVATE_BASE_URL);
     const src = makeSrc();
     let r = run(store, ["publish", src.page("plan.html", "Plan", "p")]);
     assert.strictEqual(r.status, 0, r.all);
@@ -69,7 +69,7 @@ const privLine = (r) => (r.out.match(/^private: (.*)$/m) || [])[1];
 
   await check("forge open <name> opens the private link in the default browser and prints it; an unknown name or a failed opener is exit 1", () => {
     const op = fakeOpener();
-    const store = makeStore(NO_SHELF);
+    const store = makeStore(NO_PRIVATE_BASE_URL);
     const src = makeSrc();
     assert.strictEqual(run(store, ["publish", src.page("plan.html", "Plan", "p")]).status, 0);
     const slug = manifest(store).deliverables.plan.slug;

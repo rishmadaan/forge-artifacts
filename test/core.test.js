@@ -338,7 +338,7 @@ const TWO = "<html><head><title>Fixture Doc</title></head><body>two</body></html
     const r = core.publish(ws, file);
     const v1 = fs.readFileSync(priv(ws, r.slug, "v1", "index.html"), "utf8");
     assert.ok(v1.includes('data-url="https://pub.example.org/d/' + r.slug + '/v1/"'), "public frozen url");
-    assert.ok(!v1.includes("127.0.0.1"), "no private-shelf address in the page");
+    assert.ok(!v1.includes("127.0.0.1"), "no private-base address in the page");
   });
 
   await check("hash trap: unchanged republish on a later day is a no-op; a change bumps exactly once", () => {

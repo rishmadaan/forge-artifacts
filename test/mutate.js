@@ -856,7 +856,7 @@ const MUTANTS = [
     expect: /a Windows-1252 private page/,
   },
   {
-    id: "fallback-shelf",
+    id: "fallback-local-copy",
     what: "the last-resort result after the push treats this copy as caught up, so it never warns the page is not in this machine's copy yet",
     file: "bin/forge",
     find: "const local = afterPush.local === \"yes\";",
@@ -2087,6 +2087,16 @@ const MUTANTS = [
     replace: "\n",
     test: "docs.test.js",
     expect: /the reference's forge host row is two sentences and a pointer/,
+  },
+  {
+    id: "owner-word-in-readme",
+    what: "the README uses one owner's word for the private page list, which the vocabulary scan must catch",
+    file: "README.md",
+    find: "A plugin store gives your agent the `publish` skill, not the `forge` command.",
+    // Built from pieces so this file carries no owner word.
+    replace: "A plugin store gives your agent the `publish` skill, not the `forge` command, for your " + "sh" + "elf.",
+    test: "docs.test.js",
+    expect: /no message or document uses one owner's vocabulary/,
   },
   {
     id: "update-no-store",
