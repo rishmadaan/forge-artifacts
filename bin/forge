@@ -1243,8 +1243,8 @@ function cmdUpdate(args) {
   }
   console.log("updated Forge " + VERSION + " -> " + latest);
   for (const s of sections) console.log("\n" + s.text);
-  // The command and the skill are links into this folder, so they now run
-  // the new release; this says whether those links are in place.
+  // The command and skill links made by bin/install follow this folder.
+  // Store-installed skills update separately; report the local links here.
   const inst = spawnSync(process.execPath, [path.join(ENGINE, "bin", "install"), "--check"], { encoding: "utf8" });
   console.log("\nbin/install --check:\n" + indent(((inst.stdout || "") + (inst.stderr || "")).trim()));
 }
