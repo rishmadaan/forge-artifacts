@@ -2449,6 +2449,15 @@ const MUTANTS = [
     expect: /release refuses a bin\/forge with more than one VERSION line/,
   },
   {
+    id: "marketplace-skill-source",
+    what: "the Claude Code marketplace entry's source is the repository root, so the plugin would bring bin/ onto Claude Code's PATH",
+    file: ".claude-plugin/marketplace.json",
+    find: '"source": "./skills/publish",',
+    replace: '"source": "./",',
+    test: "manifests.test.js",
+    expect: /its source the publish skill's folder only/,
+  },
+  {
     id: "release-gemini-match",
     what: "release.sh no longer refuses a gemini-extension.json whose version differs from bin/forge's, so a release can tag a Gemini manifest that says another version",
     file: "scripts/release.sh",

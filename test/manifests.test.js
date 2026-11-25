@@ -1,6 +1,6 @@
 // Runnable test: node test/manifests.test.js
-// The store listings: gemini-extension.json, and the Claude Code plugin and
-// marketplace files when present. A manifest that carries a version says
+// The store listings: gemini-extension.json and the Claude Code marketplace
+// file. A manifest that carries a version says
 // bin/forge's VERSION (scripts/release.sh sets both in the Release commit);
 // the Claude files carry none, so a plugin update follows the git commit.
 // Nothing at the root loads into an agent's session or runs that the
@@ -27,17 +27,17 @@ const VERSION = /^const VERSION = "(\d+\.\d+\.\d+)";$/m.exec(fs.readFileSync(at(
     assert.deepStrictEqual(lines.map((l) => /^ {2}"version": "\d+\.\d+\.\d+",?$/.test(l)), [true], "one top-level version line:\n" + lines.join("\n"));
   });
 
-  await check("the Claude Code plugin and marketplace files, when present: the repository's name, one entry with the same name, and no version anywhere", () => {
-    const dir = at(".claude-plugin");
-    if (!fs.existsSync(dir)) return;
-    const plugin = fs.existsSync(path.join(dir, "plugin.json")) ? json(".claude-plugin/plugin.json") : null;
+  await check("the Claude Code marketplace: the repository's name, one entry with the same name, its source the publish skill's folder only, no plugin.json, and no version anywhere", () => {
     const market = json(".claude-plugin/marketplace.json");
     assert.strictEqual(market.name, NAME);
     assert.strictEqual(market.plugins.length, 1);
     assert.strictEqual(market.plugins[0].name, NAME);
-    if (plugin) assert.strictEqual(plugin.name, NAME);
-    for (const [f, o] of [["plugin.json", plugin], ["marketplace.json", market], ["the marketplace entry", market.plugins[0]]]) {
-      assert.ok(!o || (o.version === undefined && (o.metadata || {}).version === undefined), f + " carries a version, so updates would stop following the commit");
+    // The plugin is the skill's folder alone: the repository root as the
+    // plugin would put bin/ on Claude Code's PATH from whatever main holds.
+    assert.strictEqual(market.plugins[0].source, "./skills/publish", "the marketplace entry's source");
+    assert.ok(!fs.existsSync(at(".claude-plugin/plugin.json")), "no .claude-plugin/plugin.json: it would make the root a plugin");
+    for (const [f, o] of [["marketplace.json", market], ["the marketplace entry", market.plugins[0]]]) {
+      assert.ok(o.version === undefined && (o.metadata || {}).version === undefined, f + " carries a version, so updates would stop following the commit");
     }
   });
 
