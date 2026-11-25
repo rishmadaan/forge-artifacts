@@ -31,7 +31,7 @@ const flat = (s) => s.replace(/\s+/g, " ");
   await check("README is for a first-time reader: an example, a short command table, the clone address; the detail is in docs/reference.md", () => {
     const raw = read("README.md");
     // A landing page: pictures, badges, the comparison and the store install lines add markup, not reading; the detail stays in the reference.
-    assert.ok(raw.split("\n").length < 300, "README is short: " + raw.split("\n").length + " lines");
+    assert.ok(raw.split("\n").length < 320, "README is short: " + raw.split("\n").length + " lines");
     assert.ok(raw.includes("$ forge publish report.html\npublished report v1 (private)\nprivate: "), "a short example of a publish and its result");
     assert.ok(raw.includes("git clone https://github.com/rishmadaan/forge-artifacts"), "the clone address");
     const rows = raw.split("\n").filter((l) => l.startsWith("| `forge "));

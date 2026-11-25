@@ -43,6 +43,11 @@ happened to make them.
   `publish` skill teaches agents the rules. `forge` writes to its store
   outside the current folder and uses the network, so a sandboxed session has
   to run it outside its sandbox.
+- **More than the host's upload command.** `wrangler`, `vercel deploy` and
+  `netlify deploy` put files online. Forge adds the rest: pages private by
+  default, every version at a frozen link, a git store you own, a link site
+  on Cloudflare Pages, Vercel or Netlify, share and unshare, a read-back of
+  the live site, and a skill any agent follows.
 - **Private until you say.** A new page is private. Sharing is a separate step,
   and a shared page changes only when you ask with `--live`.
 - **Older versions stay.** The stable link shows the newest version; every
@@ -56,11 +61,6 @@ happened to make them.
 - **Refuses instead of guessing.** Every command finishes, refuses and changes
   nothing, or says exactly what is left; it never reports success it has not
   read back from the live site.
-- **More than the host's upload command.** `wrangler`, `vercel deploy` and
-  `netlify deploy` put files online. Forge adds the rest: private by default,
-  versions at frozen links, a store you own behind a link site on any of three
-  hosts, share and unshare, a read-back of the live site, and a skill any
-  agent follows.
 
 <p align="center">
   <picture>
@@ -145,17 +145,38 @@ GitHub, Watch, then Custom, then Releases tells you of a new one. Run
 
 ### From your agent's plugin store
 
-A store gives your agent the `publish` skill. The `forge` command still comes
-from a clone: run the last line after whichever store you use
-(`--no-skill` links the command only, since the store brought the skill).
+A plugin store gives your agent the `publish` skill, not the `forge` command.
+Install the skill from the one your agent uses:
 
 ```sh
-claude plugin marketplace add rishmadaan/forge-artifacts     # Claude Code, then:
+# Claude Code
+claude plugin marketplace add rishmadaan/forge-artifacts
 claude plugin install forge-artifacts@forge-artifacts
-gemini extensions install https://github.com/rishmadaan/forge-artifacts   # Gemini CLI
-npx skills add rishmadaan/forge-artifacts                     # skills.sh (add -g for every project)
+```
+
+```sh
+# Gemini CLI
+gemini extensions install https://github.com/rishmadaan/forge-artifacts
+```
+
+```sh
+# skills.sh (add -g for every project)
+npx skills add rishmadaan/forge-artifacts
+```
+
+Then install the command from a clone. `--no-skill` skips the skill, since the
+store brought it:
+
+```sh
 git clone https://github.com/rishmadaan/forge-artifacts ~/forge-artifacts && ~/forge-artifacts/bin/install --no-skill
 ```
+
+Already installed with plain `bin/install`? Run `bin/install --no-skill` once,
+so your agent does not see the skill twice.
+
+`forge update` updates the command only. Update the skill with your store's
+own command: `claude plugin update forge-artifacts@forge-artifacts`,
+`gemini extensions update forge-artifacts`, or `npx skills update`.
 
 ### `forge` or `forgee`
 
