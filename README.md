@@ -164,8 +164,8 @@ gemini extensions install https://github.com/rishmadaan/forge-artifacts
 npx skills add rishmadaan/forge-artifacts
 ```
 
-Then install the command from a clone. `--no-skill` skips the skill, since the
-store brought it:
+Then install the command from a clone (`--no-skill` skips the skill, since the
+store brought it), and make a store with `forge init` (step 3 above):
 
 ```sh
 git clone https://github.com/rishmadaan/forge-artifacts ~/forge-artifacts && ~/forge-artifacts/bin/install --no-skill
