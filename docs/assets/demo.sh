@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
 # Remakes docs/assets/demo.gif: bash docs/assets/demo.sh
 # Needs vhs (with ttyd), ffmpeg and Python Playwright with Chromium. Everything
-# runs in a scratch folder under the OS temp folder, removed at the end: a
-# scratch home folder, a store made with forge init, and the stand-in host the
-# tests use (test/fakehost.js), so nothing is deployed anywhere and the public
-# link it prints is that local host's address. The terminal part is
-# demo.tape; the last frames are the shared page and its history page, opened
-# in a browser.
+# runs in a scratch folder under /tmp, removed at the end: a scratch home
+# folder, a store made with forge init, and the stand-in host the tests use
+# (test/fakehost.js), so nothing is deployed anywhere and the public link it
+# prints is that local host's address. The terminal part is demo.tape; the
+# last frames are the shared page and its history page, opened in a browser.
+# What comes in from the caller: PATH, to find the tools, and HOME, used only
+# to find Python Playwright's browsers (with TERM and LANG). Nothing else.
+# PATH stays trusted: a stray git, node or vhs earlier on it still runs.
 set -euo pipefail
-# A clean environment: only HOME, PATH, TERM, LANG and TMPDIR come in, so no
-# FORGE_* or GIT_* variable the caller has set (FORGE_WORKSPACE,
-# GIT_CONFIG_GLOBAL, GIT_DIR, ...) can point forge or git outside the scratch
-# folder.
-if [ -z "${FORGE_DEMO_CLEAN:-}" ]; then
-  exec env -i FORGE_DEMO_CLEAN=1 HOME="$HOME" PATH="$PATH" TERM="${TERM:-xterm-256color}" LANG="${LANG:-C.UTF-8}" ${TMPDIR:+"TMPDIR=$TMPDIR"} bash "$0" "$@"
+# The script re-runs itself with an empty environment, decided by an argument
+# it passes itself, then refuses if anything else came in (a --clean typed by
+# hand in a full shell), so no variable can point forge, git, node or bash
+# anywhere.
+if [ "${1:-}" != "--clean" ]; then
+  exec env -i HOME="$HOME" PATH="$PATH" TERM="${TERM:-xterm-256color}" LANG="${LANG:-C.UTF-8}" bash "$0" --clean
 fi
-# Even when started with FORGE_DEMO_CLEAN already set, no FORGE_* or GIT_* survives.
-for v in $(compgen -e); do case "$v" in FORGE_* | GIT_*) unset "$v" ;; esac; done
+for v in $(compgen -e); do case "$v" in HOME | PATH | TERM | LANG | PWD | OLDPWD | SHLVL | _) ;; *) echo "demo.sh: refusing: $v came in from the caller; run it as bash docs/assets/demo.sh" >&2; exit 1 ;; esac; done
 assets="$(cd "$(dirname "$0")" && pwd -P)"
 engine="$(cd "$assets/../.." && pwd -P)"
 for t in vhs ttyd ffmpeg python3; do command -v "$t" >/dev/null || { echo "demo.sh needs $t on PATH" >&2; exit 1; }; done
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/demo.XXXXXX")"
+work="$(mktemp -d /tmp/demo.XXXXXX)"
 host_pid=""
 cleanup() { [ -z "$host_pid" ] || kill "$host_pid" 2>/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
