@@ -117,7 +117,7 @@ $ forge share report       # once a host is set: public: https://pages.example.o
   <img alt="A recording: forge publish report.html prints a private link; forge share report prints a public link from a local test host; the page is edited and forge publish report.html --live makes v2; then the shared page in a browser in dark mode, with its Markdown and light-mode buttons, and its history page listing v1 and v2, each with its own link." src="docs/assets/demo.gif" width="860">
 </p>
 
-<p align="center"><em>Recorded on a local test host, so no page left this machine; with your own host the public link is on your site. The last frames are the shared page and its history page.</em></p>
+<p align="center"><em>Recorded with Forge's test host standing in for Cloudflare Pages (the <code>fake host:</code> lines), so no page left this machine and the public link is a local address; with your own host it is on your site. The last frames are the shared page and its history page.</em></p>
 
 **Setting it up with an agent:** point your agent at [SETUP.md](SETUP.md). It
 is written for an agent to walk a person through every step, including
