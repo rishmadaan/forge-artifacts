@@ -429,7 +429,7 @@ site was not read`, and `forge host` says `host set (dry run: not proven)`.
 
 ## `forge list --json`
 
-The interface other tools (a dashboard) read. Fast and local: it touches the
+The interface other tools (a page list, a status view) read. Fast and local: it touches the
 network only with `--live`. Stable; `schema` changes if the shape ever does
 (2 since the live marker: `linkSite` changed shape). `privateBaseUrl` is
 `null` when `config.json` has none; then every `privateUrl` is a `file://` URL.
@@ -478,7 +478,7 @@ writes the home folder as `~`. A reader that is not under the store lock can
 meet the instant git replaces `manifest.json` during a fast-forward; on a load
 error, retry once.
 
-## For a tool built on forge (for example a dashboard listing the private pages)
+## For a tool built on forge (for example one listing the private pages)
 
 - Read `forge list --json` (schema 2) and the store's files; never write the
   store. Call `forge sync` before reading when the store may be behind.
@@ -507,8 +507,8 @@ error, retry once.
   then the request is the yes. Never infer it from "update" alone. Naming
   the page without calling it the public or sent one (for example "update
   the plan") is not a yes: ask. On yes, add --live. On no, or if you cannot ask, keep it private with --name
-  '<new-name>' and say a new private page was made. For a dashboard, the
-  owner's click on an "update the public page" control is that yes.
+  '<new-name>' and say a new private page was made. For a tool with its own
+  controls, the owner's click on an "update the public page" control is that yes.
 - `forge recover` says whether an interrupted change was saved, removes
   leftover temporary copies, and reports a half-updated copy or hand edits;
   it never puts files back or discards anything. `forge recover --set-aside`
