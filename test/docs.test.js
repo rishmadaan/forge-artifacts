@@ -86,9 +86,9 @@ const flat = (s) => s.replace(/\s+/g, " ");
     assert.ok(!s.includes("every message the tool prints says `forge`"), "the old instruction to retype forge's messages is gone");
   });
 
-  await check("no message or document uses one owner's vocabulary (board cards and the like), and the skill carries no owner status field", () => {
-    // The second word is spelled in two pieces so this file does not carry it either.
-    const ownerWords = new RegExp("board card|" + "sh" + "elf", "i");
+  await check("no message or document uses one owner's vocabulary, and the skill carries no owner status field", () => {
+    // Both words are spelled in pieces so this file does not carry them either.
+    const ownerWords = new RegExp("bo" + "ard card|" + "sh" + "elf", "i");
     const hits = [];
     for (const f of ["bin/forge", "bin/install", ...fs.readdirSync(path.join(ENGINE, "lib")).filter((x) => x.endsWith(".js")).map((x) => "lib/" + x), "README.md", "SETUP.md", "AGENTS.md", "docs/reference.md", "docs/adding-a-host.md", "skills/publish/SKILL.md", "workspace-template/README.md", "workspace-template/schema.md"]) {
       read(f).split("\n").forEach((l, i) => { if (ownerWords.test(l)) hits.push(f + ":" + (i + 1) + ": " + l.trim()); });

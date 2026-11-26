@@ -2117,6 +2117,16 @@ const MUTANTS = [
     expect: /no message or document uses one owner's vocabulary/,
   },
   {
+    id: "owner-phrase-in-readme",
+    what: "the README uses one owner's phrase for a tracked item, which the vocabulary scan must catch",
+    file: "README.md",
+    find: "A plugin store gives your agent the `publish` skill, not the `forge` command.",
+    // Built from pieces so this file carries no owner phrase.
+    replace: "A plugin store gives your agent the `publish` skill, not the `forge` command, on a " + "bo" + "ard card.",
+    test: "docs.test.js",
+    expect: /no message or document uses one owner's vocabulary/,
+  },
+  {
     id: "update-no-store",
     what: "forge update loads the store first, so it stops on a machine with no store",
     file: "bin/forge",
