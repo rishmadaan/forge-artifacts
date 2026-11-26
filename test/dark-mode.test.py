@@ -60,6 +60,15 @@ AUTHORED = """<!doctype html><html><head><meta charset="utf-8"><title>Authored</
 <p id="p">A paragraph whose author set a dark text colour on a light page.</p>
 </body></html>"""
 
+# Dark-only by its own CSS, with system text colour on an author background:
+# it gets no switch, so it stays as authored (light text on its dark page).
+# Under the switch, color-scheme:light would make CanvasText black on #111.
+DARK_CSS = """<!doctype html><html><head><meta charset="utf-8"><title>Dark by CSS</title>
+<style>:root{color-scheme:dark}body{background:#111;color:CanvasText}</style></head><body>
+<h1 id="h">Dark heading</h1>
+<p id="p">A paragraph on a page that declares itself dark-only in its own CSS.</p>
+</body></html>"""
+
 # Frames are re-inverted, so they show as authored. A frame whose page sets no
 # background must read as a light box with dark text, as it always has; a
 # frame whose page styles itself for a dark device must be asked for dark and
@@ -170,6 +179,10 @@ def text_on_background(page, selector, min_ratio, dark=True, frame=None):
         assert text < bg and ratio >= min_ratio, "the text is not dark on the light background; " + where
 
 
+def no_switch(page):
+    assert page.locator("#forge-dark-toggle").count() == 0, "the page got the dark switch"
+
+
 def dark_strip(page, width):
     """The scrollbar is the strip at the window's right edge. Its track and its
     thumb must both be dark."""
@@ -208,6 +221,9 @@ def run_browser(kind, browser, base):
     page.frame_locator("#f").locator("#p").wait_for()
     check(kind + ": a frame whose page has its own dark styles gets them (light text on its dark background)",
           lambda: (text_on_background(page, "#h", 7, frame="#f"), text_on_background(page, "#p", 7, frame="#f")))
+    page.goto(base + "/dark-css.html")
+    check(kind + ": a page declaring itself dark-only in its own CSS gets no switch and stays light text on its dark page",
+          lambda: (no_switch(page), text_on_background(page, "#h", 7), text_on_background(page, "#p", 7)))
     page.goto(base + "/authored.html")
     page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
     check(kind + ": a page with its own colours shows light text on a dark page",
@@ -224,9 +240,10 @@ def run_browser(kind, browser, base):
             check(kind + ": the window's scrollbar stays dark (drawn outside the page filter)", lambda: dark_strip(page, width))
     if os.environ.get("FORGE_DARK_SHOTS"):
         # For a person to look at: the plain pages as a dark-mode reader sees them.
-        for name in ["plain"] + ["declared-" + how for how in DECLARED] + ["framed-" + how for how in FRAMED]:
+        for name in ["plain"] + ["declared-" + how for how in DECLARED] + ["framed-" + how for how in FRAMED] + ["dark-css"]:
             page.goto(base + "/%s.html" % name)
-            page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+            if page.locator("#forge-dark-toggle").count():
+                page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
             page.screenshot(path=os.path.join(os.environ["FORGE_DARK_SHOTS"], "%s-dark-%s.png" % (name, kind)))
     ctx.close()
 
@@ -254,6 +271,7 @@ def main():
             (tmp / ("declared-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
         for how, html in FRAMED.items():
             (tmp / ("framed-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
+        (tmp / "dark-css.html").write_text(stamp(DARK_CSS), encoding="utf-8")
         (tmp / "long.html").write_text(stamp(LONG), encoding="utf-8")
 
         class Quiet(http.server.SimpleHTTPRequestHandler):
