@@ -73,22 +73,19 @@ function indexTitles(html) {
     assert.strictEqual(pages.injectDarkToggle(darkDoc), darkDoc, "dark-authored page is not stamped");
   });
 
-  await check("a page declaring itself dark-only in its own CSS (:root or html) gets no dark toggle", () => {
-    for (const rule of [":root{color-scheme:dark}", "html { color-scheme: dark; }", ":root{color-scheme:only dark}", "HTML{color:#eee;color-scheme:dark only}",
-      ":root{color-scheme:dark !important}", "@media screen{:root{color-scheme:dark}}", "body{background:#111}\n:root {\n  color-scheme: dark\n}"]) {
-      const doc = "<html><head><style>" + rule + "</style></head><body><p>doc</p></body></html>";
-      assert.strictEqual(pages.injectDarkToggle(doc), doc, "not stamped: " + rule);
-    }
-  });
-
-  await check("a CSS color-scheme that is not dark-only, or not the page's own root rule, still gets the dark toggle", () => {
-    for (const rule of [":root{color-scheme:light dark}", ":root{color-scheme:dark light}", "html{color-scheme:normal}", ":root{color-scheme:light}",
-      "body{color-scheme:dark}", ".x html{color-scheme:dark}", "/* :root{color-scheme:dark} */", ":root{color-scheme:darker}"]) {
-      const doc = "<html><head><style>" + rule + "</style></head><body><p>doc</p></body></html>";
-      assert.ok(pages.injectDarkToggle(doc).includes('id="forge-dark-toggle"'), "stamped: " + rule);
-    }
-    const prose = "<html><body><p>Write :root{color-scheme:dark} to make a page dark-only.</p></body></html>";
-    assert.ok(pages.injectDarkToggle(prose).includes('id="forge-dark-toggle"'), "stamped: the rule written in the page's text, not its CSS");
+  await check("every page gets the dark toggle except one whose meta tag says exactly dark, whatever its CSS says", () => {
+    // Whether a page is dark for a reader depends on the cascade and the device, so the page's CSS is never read.
+    const docs = [":root{color-scheme:dark}", "html{font-size:100%}:root{color-scheme:dark}", "@media print{html{color-scheme:dark}}",
+      "@media (prefers-color-scheme: dark){:root{color-scheme:dark}}", ":root{color-scheme:dark;color-scheme:light dark}",
+      ":root{color-scheme:dark}:root{color-scheme:light dark}"].map((css) => "<html><head><style>" + css + "</style></head><body><p>doc</p></body></html>").concat([
+      "<html><head><!-- <style>:root{color-scheme:dark}</style> --></head><body><p>doc</p></body></html>",
+      '<html><body><iframe srcdoc="&lt;style&gt;:root{color-scheme:dark}&lt;/style&gt;hi"></iframe></body></html>',
+      "<html><body><iframe srcdoc='<style>:root{color-scheme:dark}</style>hi'></iframe></body></html>",
+      '<html><head><meta name="color-scheme" content="light dark"></head><body><p>doc</p></body></html>',
+    ]);
+    for (const doc of docs) assert.ok(pages.injectDarkToggle(doc).includes('id="forge-dark-toggle"'), "stamped: " + doc);
+    const darkMeta = '<html><head><meta name="color-scheme" content="dark"></head><body><p>doc</p></body></html>';
+    assert.strictEqual(pages.injectDarkToggle(darkMeta), darkMeta, "not stamped: the meta tag dark");
   });
 
   await check("export block: injected once, idempotent, also on dark-only pages", () => {
