@@ -63,6 +63,10 @@ Tests make scratch stores and a scratch home folder under the OS temp folder.
 
 ## Releasing
 
+CI has no browser, so it skips the browser tests: before every release, run them
+locally with Python Playwright installed (`python3 test/dark-mode.test.py` and
+`python3 test/publish-md-export.test.py`) and see them pass, not print SKIPPED.
+
 1. Write the release in `CHANGELOG.md` first: move what is under
    `## [Unreleased]` into a new `## [X.Y.Z] - YYYY-MM-DD` section (SemVer:
    while on 0.x, a minor release may break; say so there), written for the
