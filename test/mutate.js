@@ -2143,6 +2143,15 @@ const MUTANTS = [
     expect: /a CSS color-scheme that is not dark-only/,
   },
   {
+    id: "dark-field-border",
+    what: "the browser test measures a whole field again, so its border passes for text a reader cannot see",
+    file: "test/dark-mode.test.py",
+    find: "    if inside:\n",
+    replace: "    if False:\n",
+    test: "dark-mode.test.py",
+    expect: /the field check reads the field's text, not its border/,
+  },
+  {
     id: "owner-word-in-readme",
     what: "the README uses one owner's word for the private page list, which the vocabulary scan must catch",
     file: "README.md",

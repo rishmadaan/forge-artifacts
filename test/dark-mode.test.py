@@ -88,6 +88,10 @@ FRAMED = {
                            '<h1 id="h">Inner heading</h1><p id="p">A paragraph inside a frame whose page has its own dark styles.</p>'),
 }
 
+# A field whose text has its background's colour: the field check must fail on
+# it, or a field's border could pass for its text.
+HIDDEN_FIELD = PLAIN.replace('<input id="i"', '<input id="i" style="color:#fff;background:#fff"')
+
 # Taller than the window, so the window has a scrollbar.
 LONG = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Long</title></head><body>" + "<p>A line of a long page.</p>" * 120 + "</body></html>"
 
@@ -154,15 +158,22 @@ def luminance(rgb):
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
-def text_on_background(page, selector, min_ratio, dark=True, frame=None):
+def text_on_background(page, selector, min_ratio, dark=True, frame=None, inside=False):
     """Screenshot the element as rendered (the filter included). Most of a text
     box is background, so the median pixel is the background; the text is the
     pixels furthest from it. With dark, requires a dark background, text
     lighter than it, and their contrast at least min_ratio; without, a light
     background and darker text. frame: the selector of the iframe the element
-    is in."""
+    is in. inside: measure only the content box, inside the border and padding,
+    so a field's border cannot pass for its text."""
     loc = page.frame_locator(frame).locator(selector) if frame else page.locator(selector)
     box = loc.bounding_box()
+    if inside:
+        edge = loc.evaluate("""e => { const c = getComputedStyle(e), n = (k) => parseFloat(c[k]) || 0;
+            return [n("borderLeftWidth") + n("paddingLeft"), n("borderTopWidth") + n("paddingTop"),
+                    n("borderRightWidth") + n("paddingRight"), n("borderBottomWidth") + n("paddingBottom")]; }""")
+        box = {"x": box["x"] + edge[0], "y": box["y"] + edge[1],
+               "width": box["width"] - edge[0] - edge[2], "height": box["height"] - edge[1] - edge[3]}
     shot = page.screenshot(clip={"x": box["x"], "y": box["y"], "width": box["width"], "height": box["height"]})
     _, _, rows = png_pixels(shot)
     lum = sorted(luminance(px) for row in rows for px in row)
@@ -177,6 +188,14 @@ def text_on_background(page, selector, min_ratio, dark=True, frame=None):
     else:
         assert bg > 0.5, "the background is not light; " + where
         assert text < bg and ratio >= min_ratio, "the text is not dark on the light background; " + where
+
+
+def fails(fn):
+    try:
+        fn()
+    except AssertionError:
+        return
+    raise AssertionError("the check passed on a field with no visible text")
 
 
 def no_switch(page):
@@ -204,13 +223,13 @@ def run_browser(kind, browser, base):
     check(kind + ": a page with no author colours shows light text on a dark page (heading and paragraph)",
           lambda: (text_on_background(page, "#h", 7), text_on_background(page, "#p", 7)))
     check(kind + ": a plain link with no colour is light on the dark page", lambda: text_on_background(page, "#a a", 7))
-    check(kind + ": a plain form field is dark with light text", lambda: text_on_background(page, "#i", 4.5))
+    check(kind + ": a plain form field is dark with light text", lambda: text_on_background(page, "#i", 4.5, inside=True))
     for how in DECLARED:
         page.goto(base + "/declared-%s.html" % how)
         page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
         check(kind + ": a page with no colours that declares light dark (by %s) shows light text, link and field on a dark page" % how,
               lambda: (text_on_background(page, "#h", 7), text_on_background(page, "#p", 7),
-                       text_on_background(page, "#a a", 7), text_on_background(page, "#i", 4.5)))
+                       text_on_background(page, "#a a", 7), text_on_background(page, "#i", 4.5, inside=True)))
     page.goto(base + "/framed-plain.html")
     page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
     page.frame_locator("#f").locator("#p").wait_for()
@@ -221,6 +240,10 @@ def run_browser(kind, browser, base):
     page.frame_locator("#f").locator("#p").wait_for()
     check(kind + ": a frame whose page has its own dark styles gets them (light text on its dark background)",
           lambda: (text_on_background(page, "#h", 7, frame="#f"), text_on_background(page, "#p", 7, frame="#f")))
+    page.goto(base + "/hidden-field.html")
+    page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+    check(kind + ": the field check reads the field's text, not its border: it fails on a field whose text matches its background",
+          lambda: fails(lambda: text_on_background(page, "#i", 4.5, inside=True)))
     page.goto(base + "/dark-css.html")
     check(kind + ": a page declaring itself dark-only in its own CSS gets no switch and stays light text on its dark page",
           lambda: (no_switch(page), text_on_background(page, "#h", 7), text_on_background(page, "#p", 7)))
@@ -271,6 +294,7 @@ def main():
             (tmp / ("declared-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
         for how, html in FRAMED.items():
             (tmp / ("framed-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
+        (tmp / "hidden-field.html").write_text(stamp(HIDDEN_FIELD), encoding="utf-8")
         (tmp / "dark-css.html").write_text(stamp(DARK_CSS), encoding="utf-8")
         (tmp / "long.html").write_text(stamp(LONG), encoding="utf-8")
 
