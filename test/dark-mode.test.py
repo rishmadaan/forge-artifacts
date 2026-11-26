@@ -3,7 +3,8 @@
 # filter, so the computed colours never change: this test reads the rendered
 # pixels instead, and requires light text on a dark background for a page with
 # no author colours, a page with its own colours, a plain link and a form
-# field. It uses only made-up pages, because the engine carries no owner data.
+# field, and for a page with no colours that declares it supports both schemes
+# (by meta and by CSS), where the browser would pick its dark defaults. It uses only made-up pages, because the engine carries no owner data.
 # Runnable: python3 test/dark-mode.test.py
 # Needs Python Playwright. Runs in every browser Playwright has installed
 # (Chromium, Firefox, WebKit) and prints a SKIPPED line for each one it cannot
@@ -40,6 +41,14 @@ PLAIN = """<!doctype html><html><head><meta charset="utf-8"><title>Plain</title>
 <p id="a"><a href="#x">A plain link with no colour</a></p>
 <p><input id="i" size="34" value="Typed text in a plain field"></p>
 </body></html>"""
+
+# The same plain page declaring it supports both schemes, once by meta and once
+# by CSS: on a dark device the browser would pick its dark defaults (white
+# text), which the inversion turns black on black.
+DECLARED = {
+    "meta": PLAIN.replace('<meta charset="utf-8">', '<meta charset="utf-8"><meta name="color-scheme" content="light dark">'),
+    "css": PLAIN.replace("<title>Plain</title>", "<title>Plain</title><style>:root{color-scheme:light dark}</style>"),
+}
 
 # The author sets their own light colours, as most pages do.
 AUTHORED = """<!doctype html><html><head><meta charset="utf-8"><title>Authored</title>
@@ -153,6 +162,12 @@ def run_browser(kind, browser, base):
           lambda: (text_on_background(page, "#h", 7), text_on_background(page, "#p", 7)))
     check(kind + ": a plain link with no colour is light on the dark page", lambda: text_on_background(page, "#a a", 7))
     check(kind + ": a plain form field is dark with light text", lambda: text_on_background(page, "#i", 4.5))
+    for how in DECLARED:
+        page.goto(base + "/declared-%s.html" % how)
+        page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+        check(kind + ": a page with no colours that declares light dark (by %s) shows light text, link and field on a dark page" % how,
+              lambda: (text_on_background(page, "#h", 7), text_on_background(page, "#p", 7),
+                       text_on_background(page, "#a a", 7), text_on_background(page, "#i", 4.5)))
     page.goto(base + "/authored.html")
     page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
     check(kind + ": a page with its own colours shows light text on a dark page",
@@ -168,10 +183,11 @@ def run_browser(kind, browser, base):
         else:
             check(kind + ": the window's scrollbar stays dark (drawn outside the page filter)", lambda: dark_strip(page, width))
     if os.environ.get("FORGE_DARK_SHOTS"):
-        # For a person to look at: the plain page as a dark-mode reader sees it.
-        page.goto(base + "/plain.html")
-        page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
-        page.screenshot(path=os.path.join(os.environ["FORGE_DARK_SHOTS"], "plain-dark-%s.png" % kind))
+        # For a person to look at: the plain pages as a dark-mode reader sees them.
+        for name in ["plain"] + ["declared-" + how for how in DECLARED]:
+            page.goto(base + "/%s.html" % name)
+            page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+            page.screenshot(path=os.path.join(os.environ["FORGE_DARK_SHOTS"], "%s-dark-%s.png" % (name, kind)))
     ctx.close()
 
 
@@ -194,6 +210,8 @@ def main():
         own_environment(tmp)
         (tmp / "plain.html").write_text(stamp(PLAIN), encoding="utf-8")
         (tmp / "authored.html").write_text(stamp(AUTHORED), encoding="utf-8")
+        for how, html in DECLARED.items():
+            (tmp / ("declared-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
         (tmp / "long.html").write_text(stamp(LONG), encoding="utf-8")
 
         class Quiet(http.server.SimpleHTTPRequestHandler):
