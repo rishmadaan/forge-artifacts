@@ -251,11 +251,12 @@ def run_browser(kind, browser, base):
     page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
     check(kind + ": a page with its own colours shows light text on a dark page",
           lambda: (text_on_background(page, "#h", 7), text_on_background(page, "#p", 7)))
-    if kind == "webkit":
-        print("SKIPPED webkit: the scrollbar check (WebKit has no scrollbar-color; a light scrollbar there is accepted)")
+    page.goto(base + "/long.html")
+    page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+    if not page.evaluate('CSS.supports("scrollbar-color", "#6b6b6b #1c1c1c")'):
+        # Safari before 26.2: a light scrollbar there is accepted.
+        print("SKIPPED %s: the scrollbar check (this browser does not support scrollbar-color)" % kind)
     else:
-        page.goto(base + "/long.html")
-        page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
         width = page.evaluate("window.innerWidth - document.documentElement.clientWidth")
         if width == 0:
             print("SKIPPED %s: the scrollbar check (this browser draws overlay scrollbars here)" % kind)
