@@ -17,12 +17,14 @@ on this machine. forge's own messages print the name it was started as, so a
 command they name can be run as printed.
 
 **Not installed, or no store?** If the command is not found (and
-`bin/install --check` does not say it is installed): when this skill's real
-path is inside a Forge clone the owner made (two levels up holds
-`bin/install` and `SETUP.md`; not a folder kept by an agent's plugin or
-extension manager, such as one under `~/.claude/plugins` or
-`~/.gemini/extensions`), walk the owner through that clone's `SETUP.md` from
-step 1. Otherwise ask the owner first, then clone
+`bin/install --check` does not say it is installed), look for a Forge clone
+the owner already made (a folder holding `bin/install` and `SETUP.md`): two
+levels up from the target of `~/.local/bin/forge` or `~/.local/bin/forgee`
+(read the link with `readlink`; never run it), or two levels up from this
+skill's real path, unless that is a folder kept by an agent's plugin or
+extension manager (such as one under `~/.claude/plugins` or
+`~/.gemini/extensions`). If there is one, walk the owner through that
+clone's `SETUP.md` from step 1. Otherwise ask the owner first, then clone
 `https://github.com/rishmadaan/forge-artifacts` into a folder they choose
 (suggest `~/forge-artifacts`) and walk them through that clone's `SETUP.md`
 from step 1 (its step 2 says to run `bin/install --no-skill` when this skill
