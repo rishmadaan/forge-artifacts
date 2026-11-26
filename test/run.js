@@ -1,8 +1,8 @@
 // Runs every test/*.test.js; prints only FAIL lines and a count.
 //   node test/run.js
-// The browser test for the Markdown export (publish-md-export.test.py) needs
-// Python Playwright with Chromium; it runs when python3 can import playwright
-// and is reported as skipped otherwise, never silently.
+// The browser tests (test/*.test.py: the Markdown export and dark mode) need
+// Python Playwright; they run when python3 can import playwright and are
+// reported as skipped otherwise, never silently.
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
@@ -26,18 +26,19 @@ for (const f of files) {
     console.log(((r.stdout || "") + (r.stderr || "")).trim().split("\n").slice(-15).map((l) => "    " + l).join("\n"));
   }
 }
-const py = path.join(dir, "publish-md-export.test.py");
-if (fs.existsSync(py)) {
-  const probe = spawnSync("python3", ["-c", "import playwright"], { encoding: "utf8" });
-  if (probe.status !== 0) console.log("SKIPPED publish-md-export.test.py (python3 cannot import playwright)");
-  else {
-    ran++;
-    const r = spawnSync("python3", [py], { encoding: "utf8", timeout: 300000, env: { ...process.env, TMPDIR: scratch } });
-    if (r.status !== 0) {
-      failed++;
-      console.log("FAIL publish-md-export.test.py");
-      console.log(((r.stdout || "") + (r.stderr || "")).trim().split("\n").slice(-15).map((l) => "    " + l).join("\n"));
-    }
+const pyFiles = fs.readdirSync(dir).filter((f) => f.endsWith(".test.py")).sort();
+const probe = pyFiles.length ? spawnSync("python3", ["-c", "import playwright"], { encoding: "utf8" }) : null;
+for (const f of pyFiles) {
+  if (probe.status !== 0) { console.log("SKIPPED " + f + " (python3 cannot import playwright)"); continue; }
+  ran++;
+  const r = spawnSync("python3", [path.join(dir, f)], { encoding: "utf8", timeout: 300000, env: { ...process.env, TMPDIR: scratch } });
+  const out = ((r.stdout || "") + (r.stderr || "")).trim();
+  // A browser the test could not start is said, not hidden.
+  for (const l of out.split("\n")) if (l.startsWith("SKIPPED ")) console.log(l + " [" + f + "]");
+  if (r.status !== 0) {
+    failed++;
+    console.log("FAIL " + f);
+    console.log(out.split("\n").slice(-15).map((l) => "    " + l).join("\n"));
   }
 }
 console.log("ran " + ran + " test files, " + failed + " failed");

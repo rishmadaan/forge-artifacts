@@ -606,6 +606,8 @@ network, a real secret, or your setting file. The fake link site
 host's CLI and "uploads" into a folder, plus a local HTTP server that serves
 it with that host's header rules; it can fail before or after an upload, or
 keep serving an old marker. The engine has no test mode for it, so nothing in
-a store's config can select it. The Markdown export browser test
-(`test/publish-md-export.test.py`) needs Python Playwright with Chromium; the
-runner reports it as skipped when that is missing.
+a store's config can select it. The browser tests, for the Markdown export
+(`test/publish-md-export.test.py`) and for dark mode (`test/dark-mode.test.py`,
+which reads the rendered pixels in every browser Playwright has installed),
+need Python Playwright with Chromium; the runner reports them as skipped when
+that is missing, and names any browser the dark-mode test could not start.

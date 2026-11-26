@@ -2089,6 +2089,24 @@ const MUTANTS = [
     expect: /the reference's forge host row is two sentences and a pointer/,
   },
   {
+    id: "dark-color-scheme",
+    what: "dark mode sets color-scheme:dark again, so a page with no colours of its own turns black on black",
+    file: "lib/pages.js",
+    find: "background:#fff;scrollbar-color:#6b6b6b #1c1c1c;",
+    replace: "background:#fff;color-scheme:dark;",
+    test: "dark-mode.test.py",
+    expect: /a page with no author colours shows light text on a dark page/,
+  },
+  {
+    id: "dark-scrollbar",
+    what: "dark mode no longer colours the scrollbar, so it stays light beside the dark page",
+    file: "lib/pages.js",
+    find: "background:#fff;scrollbar-color:#6b6b6b #1c1c1c;",
+    replace: "background:#fff;",
+    test: "dark-mode.test.py",
+    expect: /the window's scrollbar stays dark/,
+  },
+  {
     id: "owner-word-in-readme",
     what: "the README uses one owner's word for the private page list, which the vocabulary scan must catch",
     file: "README.md",
@@ -2544,7 +2562,8 @@ for (const m of list) {
   // The test's scratch stores go inside the copy, so they are removed with it.
   const scratch = path.join(copy, ".tmp");
   fs.mkdirSync(scratch);
-  const r = spawnSync(process.execPath, [path.join(copy, "test", m.test)], { encoding: "utf8", timeout: 300000, env: { ...process.env, FORGE_DEPLOY: "0", TMPDIR: scratch } });
+  const run = m.test.endsWith(".py") ? "python3" : process.execPath;
+  const r = spawnSync(run, [path.join(copy, "test", m.test)], { encoding: "utf8", timeout: 300000, env: { ...process.env, FORGE_DEPLOY: "0", TMPDIR: scratch } });
   const out = (r.stdout || "") + (r.stderr || "");
   const failed = (out.match(/^ {2}not ok - (.*)$/m) || [])[1];
   const after = out.split(/^ {2}not ok - .*$/m)[1] || "";
