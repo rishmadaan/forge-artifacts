@@ -609,5 +609,8 @@ keep serving an old marker. The engine has no test mode for it, so nothing in
 a store's config can select it. The browser tests, for the Markdown export
 (`test/publish-md-export.test.py`) and for dark mode (`test/dark-mode.test.py`,
 which reads the rendered pixels in every browser Playwright has installed),
-need Python Playwright with Chromium; the runner reports them as skipped when
-that is missing, and names any browser the dark-mode test could not start.
+need Python Playwright: the runner skips both, and says so, when python3
+cannot import it. The Markdown export test also needs Chromium and fails
+without it. The dark-mode test prints the browsers it ran (`browsers run:`)
+and a SKIPPED line for each browser it could not start, which the runner
+repeats; with no browser at all it tests nothing and says so.

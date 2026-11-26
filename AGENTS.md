@@ -64,8 +64,15 @@ Tests make scratch stores and a scratch home folder under the OS temp folder.
 ## Releasing
 
 CI has no browser, so it skips the browser tests: before every release, run them
-locally with Python Playwright installed (`python3 test/dark-mode.test.py` and
-`python3 test/publish-md-export.test.py`) and see them pass, not print SKIPPED.
+locally with Python Playwright and Chromium installed
+(`python3 test/dark-mode.test.py` and `python3 test/publish-md-export.test.py`).
+The Markdown export test must pass, and the dark-mode test must list Chromium
+under `browsers run` with no failed check. A `SKIPPED <browser>: it does not
+start` line means only that that browser could not start, usually because it is
+not installed (`python3 -m playwright install <browser>` adds it), and a skipped
+scrollbar check is expected where scrollbars overlay or `scrollbar-color` is
+unsupported. If the dark-mode test prints `browsers run: none`, it tested
+nothing.
 
 1. Write the release in `CHANGELOG.md` first: move what is under
    `## [Unreleased]` into a new `## [X.Y.Z] - YYYY-MM-DD` section (SemVer:
