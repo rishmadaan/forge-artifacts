@@ -2116,6 +2116,15 @@ const MUTANTS = [
     expect: /a page with no colours that declares light dark \(by meta\)/,
   },
   {
+    id: "dark-embed-scheme",
+    what: "dark mode no longer asks re-inverted frames for the dark scheme, so a frame whose page sets no background turns black on black",
+    file: "lib/pages.js",
+    find: "hue-rotate(180deg);color-scheme:dark}",
+    replace: "hue-rotate(180deg)}",
+    test: "dark-mode.test.py",
+    expect: /a frame whose page sets no background reads as a light box/,
+  },
+  {
     id: "owner-word-in-readme",
     what: "the README uses one owner's word for the private page list, which the vocabulary scan must catch",
     file: "README.md",

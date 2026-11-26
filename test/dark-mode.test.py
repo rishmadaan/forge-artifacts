@@ -4,7 +4,10 @@
 # pixels instead, and requires light text on a dark background for a page with
 # no author colours, a page with its own colours, a plain link and a form
 # field, and for a page with no colours that declares it supports both schemes
-# (by meta and by CSS), where the browser would pick its dark defaults. It uses only made-up pages, because the engine carries no owner data.
+# (by meta and by CSS), where the browser would pick its dark defaults. Frames
+# keep the look they had before the root went light: a frame whose page sets
+# no background reads as a light box, and a frame whose page has its own dark
+# styles gets them. It uses only made-up pages, because the engine carries no owner data.
 # Runnable: python3 test/dark-mode.test.py
 # Needs Python Playwright. Runs in every browser Playwright has installed
 # (Chromium, Firefox, WebKit) and prints a SKIPPED line for each one it cannot
@@ -56,6 +59,25 @@ AUTHORED = """<!doctype html><html><head><meta charset="utf-8"><title>Authored</
 <h1 id="h">Authored heading</h1>
 <p id="p">A paragraph whose author set a dark text colour on a light page.</p>
 </body></html>"""
+
+# Frames are re-inverted, so they show as authored. A frame whose page sets no
+# background must read as a light box with dark text, as it always has; a
+# frame whose page styles itself for a dark device must be asked for dark and
+# get those styles. Chromium (156) does not pass the frame element's scheme on
+# to the frame's prefers-color-scheme (it follows the device), so there the
+# second check holds either way; it guards browsers that do (the standard says
+# a frame follows its embedding element's scheme).
+def framed(inner):
+    return ("<!doctype html><html><head><meta charset=\"utf-8\"><title>Framed</title></head><body>"
+            "<h1>Outer heading</h1><iframe id=\"f\" style=\"width:640px;height:200px\" srcdoc=\"%s\"></iframe></body></html>"
+            % inner.replace("&", "&amp;").replace('"', "&quot;"))
+
+
+FRAMED = {
+    "plain": framed('<h1 id="h">Inner heading</h1><p id="p">A paragraph inside a frame whose page sets no colours.</p>'),
+    "prefers-dark": framed('<style>body{background:#fff;color:#111}@media (prefers-color-scheme: dark){body{background:#111;color:#eee}}</style>'
+                           '<h1 id="h">Inner heading</h1><p id="p">A paragraph inside a frame whose page has its own dark styles.</p>'),
+}
 
 # Taller than the window, so the window has a scrollbar.
 LONG = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Long</title></head><body>" + "<p>A line of a long page.</p>" * 120 + "</body></html>"
@@ -123,21 +145,29 @@ def luminance(rgb):
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
-def text_on_background(page, selector, min_ratio):
+def text_on_background(page, selector, min_ratio, dark=True, frame=None):
     """Screenshot the element as rendered (the filter included). Most of a text
     box is background, so the median pixel is the background; the text is the
-    pixels furthest from it. Requires a dark background, text lighter than it,
-    and their contrast at least min_ratio."""
-    box = page.locator(selector).bounding_box()
+    pixels furthest from it. With dark, requires a dark background, text
+    lighter than it, and their contrast at least min_ratio; without, a light
+    background and darker text. frame: the selector of the iframe the element
+    is in."""
+    loc = page.frame_locator(frame).locator(selector) if frame else page.locator(selector)
+    box = loc.bounding_box()
     shot = page.screenshot(clip={"x": box["x"], "y": box["y"], "width": box["width"], "height": box["height"]})
     _, _, rows = png_pixels(shot)
     lum = sorted(luminance(px) for row in rows for px in row)
     bg = lum[len(lum) // 2]
-    text = lum[-max(1, len(lum) // 200)]  # the brightest half percent: the text's cores
-    ratio = (text + 0.05) / (bg + 0.05)
-    where = "%s: background luminance %.3f, text luminance %.3f, contrast %.1f:1" % (selector, bg, text, ratio)
-    assert bg < 0.05, "the background is not dark; " + where
-    assert ratio >= min_ratio, "the text is not light on the dark background; " + where
+    n = max(1, len(lum) // 200)  # the half percent furthest from the background: the text's cores
+    text = lum[-n] if dark else lum[n - 1]
+    ratio = (max(text, bg) + 0.05) / (min(text, bg) + 0.05)
+    where = "%s%s: background luminance %.3f, text luminance %.3f, contrast %.1f:1" % (frame + " " if frame else "", selector, bg, text, ratio)
+    if dark:
+        assert bg < 0.05, "the background is not dark; " + where
+        assert text > bg and ratio >= min_ratio, "the text is not light on the dark background; " + where
+    else:
+        assert bg > 0.5, "the background is not light; " + where
+        assert text < bg and ratio >= min_ratio, "the text is not dark on the light background; " + where
 
 
 def dark_strip(page, width):
@@ -168,6 +198,16 @@ def run_browser(kind, browser, base):
         check(kind + ": a page with no colours that declares light dark (by %s) shows light text, link and field on a dark page" % how,
               lambda: (text_on_background(page, "#h", 7), text_on_background(page, "#p", 7),
                        text_on_background(page, "#a a", 7), text_on_background(page, "#i", 4.5)))
+    page.goto(base + "/framed-plain.html")
+    page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+    page.frame_locator("#f").locator("#p").wait_for()
+    check(kind + ": a frame whose page sets no background reads as a light box with dark text, as before",
+          lambda: (text_on_background(page, "#h", 7, dark=False, frame="#f"), text_on_background(page, "#p", 7, dark=False, frame="#f")))
+    page.goto(base + "/framed-prefers-dark.html")
+    page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
+    page.frame_locator("#f").locator("#p").wait_for()
+    check(kind + ": a frame whose page has its own dark styles gets them (light text on its dark background)",
+          lambda: (text_on_background(page, "#h", 7, frame="#f"), text_on_background(page, "#p", 7, frame="#f")))
     page.goto(base + "/authored.html")
     page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
     check(kind + ": a page with its own colours shows light text on a dark page",
@@ -184,7 +224,7 @@ def run_browser(kind, browser, base):
             check(kind + ": the window's scrollbar stays dark (drawn outside the page filter)", lambda: dark_strip(page, width))
     if os.environ.get("FORGE_DARK_SHOTS"):
         # For a person to look at: the plain pages as a dark-mode reader sees them.
-        for name in ["plain"] + ["declared-" + how for how in DECLARED]:
+        for name in ["plain"] + ["declared-" + how for how in DECLARED] + ["framed-" + how for how in FRAMED]:
             page.goto(base + "/%s.html" % name)
             page.wait_for_function("document.documentElement.classList.contains('forge-dark')")
             page.screenshot(path=os.path.join(os.environ["FORGE_DARK_SHOTS"], "%s-dark-%s.png" % (name, kind)))
@@ -212,6 +252,8 @@ def main():
         (tmp / "authored.html").write_text(stamp(AUTHORED), encoding="utf-8")
         for how, html in DECLARED.items():
             (tmp / ("declared-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
+        for how, html in FRAMED.items():
+            (tmp / ("framed-%s.html" % how)).write_text(stamp(html), encoding="utf-8")
         (tmp / "long.html").write_text(stamp(LONG), encoding="utf-8")
 
         class Quiet(http.server.SimpleHTTPRequestHandler):

@@ -126,7 +126,7 @@ function indexTitles(html) {
     // the neutral default accent.
     const s = "<html><head><title>Hash pin</title></head><body><p>x</p></body></html>";
     const h = require("node:crypto").createHash("sha256").update(pages.injectMarkdownExport(pages.injectDarkToggle(s), null)).digest("hex");
-    assert.strictEqual(h, "80cbf528c41dc9a3abc41a35b4bd9bfa4f34a022bc49068a9eda695c8e57d885");
+    assert.strictEqual(h, "95f01bb9229633f278c849b253c433b666172762e1eb21a3a13ad0032887764e");
   });
 
   await check("wordmark: an SVG file is embedded with the brand name; without one the name is text", () => {
