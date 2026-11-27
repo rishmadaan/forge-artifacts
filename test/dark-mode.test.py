@@ -4,7 +4,7 @@
 # pixels instead. Every page runs twice: on a dark device (the page turns dark
 # by itself) and on a light device with the switch pressed. The bar: a page
 # with no author colours, its plain link and its form field read light on
-# dark; no kind of page reads worse than it did before this fix (some read
+# dark; no kind of page reads worse than it did in 0.1.1 (some read
 # dark on light with dark mode on, as they always did, and that is what is
 # asserted for them); frames and images keep the look they had; and the stamp
 # forces no colour scheme on the page. It uses only made-up pages, because
@@ -54,8 +54,8 @@ def head(extra):
 
 # The plain page declaring it supports both schemes, once by meta and once by
 # CSS. On a dark device the browser picks its dark defaults (white text), which
-# the inversion turns black on black: the known limit, unchanged from before
-# this fix, so that state is not asserted. With the switch pressed on a light
+# the inversion turns black on black: the known limit, unchanged from
+# 0.1.1, so that state is not asserted. With the switch pressed on a light
 # device it reads light on dark.
 DECLARED = {
     "meta": head('<meta name="color-scheme" content="light dark">'),

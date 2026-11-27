@@ -10,8 +10,10 @@ so under that release. To update a copy cloned with git, run `forge update`
 
 ## [Unreleased]
 
-- Dark mode no longer shows a page that sets no colours of its own as black on black. Dark mode follows the reader's device setting by default, so every reader in dark mode saw such a page as empty. Its text, plain links and form fields now read light on dark, as on pages that set their own colours. One case is unchanged: a page with no colours of its own that says it supports both light and dark (`color-scheme: light dark`) still reads black on black for a reader whose device is in dark mode; giving the page its own text and background colours avoids it. The scrollbar stays dark in browsers that support `scrollbar-color` (current Chrome, Edge, Firefox, and Safari 26.2 or later); older browsers may draw it light.
-- Pages you already published keep the dark mode they were published with: a frozen version never changes, and publishing an unchanged file again changes nothing. To give a page the fix, change its source (any change) and publish it again (with `--live` if it is shared). That makes a new version, and the page's link shows it; each older version keeps the old dark mode at its own link. A page brought in with `forge import` may get one new version, with the fix, the next time you publish it unchanged: Forge makes one when the page as stamped now differs from what was recorded at import. History pages and the master index get it on the next change to the store, or with `forge regenerate`.
+## [0.1.2] - 2026-11-27
+
+- Dark mode no longer shows a page that sets no colours of its own as black on black. Dark mode follows the reader's device setting by default, so every reader in dark mode saw such a page as empty. Its text, plain links and form fields now read light on dark, as on pages that set their own colours. One case is unchanged: a page with no colours of its own that says it supports both light and dark (`color-scheme: light dark`) still reads black on black for a reader whose device is in dark mode, until they press the page's Light button; setting the text and background colours of the page's `body` avoids it. The scrollbar stays dark in browsers that support `scrollbar-color` (current Chrome, Edge, Firefox, and Safari 26.2 or later); older browsers may now draw it light, where 0.1.1 drew it dark. One rare case reads worse than in 0.1.1: an image whose own background uses `light-dark()` and that sits inside an element set to `color-scheme: light` now shows its dark background in dark mode; setting `color-scheme: light` on the image itself keeps it light.
+- Pages you already published keep the dark mode they were published with: a frozen version never changes, and publishing an unchanged file again changes nothing. To give a page the fix, change its source (any change) and publish it again (with `--live` if it is shared). That makes a new version, and the page's link shows it; each older version keeps the old dark mode at its own link. A page brought in with `forge import` and not published since may get one new version, with the fix, the next time you publish it unchanged: Forge makes one when the page as stamped now differs from what was recorded at import. History pages and the master index, which were not affected, get the new dark mode on the next change to the store, or with `forge regenerate`.
 - The `publish` skill also finds a Forge clone you already made through the command's own link (`~/.local/bin/forge` or `forgee`), so an agent whose skill came from a plugin store walks you through that clone instead of offering a second one.
 
 ## [0.1.1] - 2026-11-26
@@ -34,6 +36,7 @@ The first public release.
 - Every page gets a dark-mode switch (unless it is dark-only) and Markdown copy and download buttons; your source file is not changed.
 - `bin/install` links the command and the `publish` skill for agents, as `forgee` where another program already owns the name `forge`.
 
-[Unreleased]: https://github.com/rishmadaan/forge-artifacts/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/rishmadaan/forge-artifacts/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/rishmadaan/forge-artifacts/releases/tag/v0.1.2
 [0.1.1]: https://github.com/rishmadaan/forge-artifacts/releases/tag/v0.1.1
 [0.1.0]: https://github.com/rishmadaan/forge-artifacts/releases/tag/v0.1.0

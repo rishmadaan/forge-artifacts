@@ -79,10 +79,10 @@ no host account is needed yet.
 1. Make a small page, for example `hello.html` with a `<title>Hello</title>`.
 2. `forge publish hello.html`. It prints `published hello v1 (private)` and a
    `private:` link: the page's file on this machine. `forge open hello`
-   opens it in the browser. Forge adds a dark-mode switch (unless a meta tag
-   marks the page dark-only) and Markdown copy and download buttons ("Copy as
-   Markdown", "Download .md") to every page it publishes; the source file is
-   not changed.
+   opens it in the browser. Forge adds a dark-mode switch (unless the page
+   marks itself dark-only with `<meta name="color-scheme" content="dark">`)
+   and Markdown copy and download buttons ("Copy as Markdown", "Download
+   .md") to every page it publishes; the source file is not changed.
 3. Change the page and run `forge publish hello.html` again: it prints
    `published hello v2 (private)`. The link stays the same and shows the
    latest version; every version keeps a frozen link of its own. Publishing an

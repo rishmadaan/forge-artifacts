@@ -63,8 +63,8 @@ Tests make scratch stores and a scratch home folder under the OS temp folder.
 
 ## Releasing
 
-CI has no browser, so it skips the browser tests: before every release, run them
-locally with Python Playwright and Chromium installed
+CI does not install Python Playwright, so it skips the browser tests: before
+every release, run them locally with Python Playwright and Chromium installed
 (`python3 test/dark-mode.test.py` and `python3 test/publish-md-export.test.py`).
 The Markdown export test must pass, and the dark-mode test must list Chromium
 under `browsers run` with no failed check. A `SKIPPED <browser>: it does not

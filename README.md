@@ -55,9 +55,9 @@ happened to make them.
 - **Yours, end to end.** The store is a git repository you own; the public
   site is on your own host account, at its address or your own domain.
   Nothing to export when you leave.
-- **Reads well everywhere.** Each page gets a dark-mode switch (unless a meta
-  tag marks it dark-only) and Markdown copy and download buttons; your source
-  file is not changed.
+- **Reads well everywhere.** Each page gets a dark-mode switch (unless it marks
+  itself dark-only with `<meta name="color-scheme" content="dark">`) and
+  Markdown copy and download buttons; your source file is not changed.
 - **Refuses instead of guessing.** Every command finishes, refuses and changes
   nothing, or says exactly what is left; it never reports success it has not
   read back from the live site.
